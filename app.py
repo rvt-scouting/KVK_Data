@@ -97,12 +97,13 @@ if analysis_mode == "Spelers":
     # --- A. SPELER SELECTIE MET DUPLICAAT CHECK ---
     st.sidebar.header("3. Speler Selectie")
     
-    # We halen nu ook de Squad Name en Player ID op
+    # UPDATE: We gebruiken CAST(s."squadId" AS TEXT) = sq.id
+    # Dit zorgt dat de integer s.squadId matcht met de text sq.id
     players_query = """
         SELECT p.commonname, p.id as "playerId", sq.name as "squadName"
         FROM public.players p
         JOIN analysis.final_impect_scores s ON p.id = s."playerId"
-        LEFT JOIN public.squads sq ON s."squadId" = sq.id
+        LEFT JOIN public.squads sq ON CAST(s."squadId" AS TEXT) = sq.id
         WHERE s."iterationId" = %s
         ORDER BY p.commonname;
     """
@@ -110,41 +111,45 @@ if analysis_mode == "Spelers":
     try:
         df_players = run_query(players_query, params=(selected_iteration_id,))
         
-        # Stap 1: De unieke namen voor de eerste dropdown
+        # Stap 1: Unieke namen
         unique_names = df_players['commonname'].unique().tolist()
         selected_player_name = st.sidebar.selectbox("Kies een speler:", unique_names)
         
-        # Stap 2: Checken op dubbels voor deze specifieke naam
-        # We filteren de dataframe op de gekozen naam
+        # Stap 2: Filteren op de gekozen naam om te zien of er dubbels zijn
         candidate_rows = df_players[df_players['commonname'] == selected_player_name]
         
         final_player_id = None
         
         if len(candidate_rows) > 1:
-            # ER ZIJN DUBBELS: Toon extra dropdown voor teamkeuze
-            st.sidebar.warning(f"⚠️ Meerdere spelers gevonden met naam '{selected_player_name}'.")
-            squad_options = candidate_rows['squadName'].tolist()
-            selected_squad = st.sidebar.selectbox("Kies team:", squad_options)
+            # ER ZIJN DUBBELS: Toon extra dropdown
+            st.sidebar.warning(f"⚠️ Meerdere spelers gevonden: '{selected_player_name}'.")
             
-            # Pak de ID die hoort bij deze naam én dit team
-            final_player_id = candidate_rows[candidate_rows['squadName'] == selected_squad].iloc[0]['playerId']
+            # Maak een lijstje van teams, maar filter None eruit (voor spelers zonder team)
+            squad_options = [s for s in candidate_rows['squadName'].tolist() if s is not None]
+            
+            if squad_options:
+                selected_squad = st.sidebar.selectbox("Kies team:", squad_options)
+                # Pak het ID op basis van naam EN team
+                final_player_id = candidate_rows[candidate_rows['squadName'] == selected_squad].iloc[0]['playerId']
+            else:
+                # Fallback als er wel dubbels zijn maar geen teamnamen bekend
+                final_player_id = candidate_rows.iloc[0]['playerId']
             
         elif len(candidate_rows) == 1:
-            # GEEN DUBBELS: Gewoon de id pakken
+            # GEEN DUBBELS
             final_player_id = candidate_rows.iloc[0]['playerId']
         else:
             st.error("Er ging iets mis met de selectie.")
             st.stop()
 
     except Exception as e:
-        st.error("Fout bij ophalen spelerslijst. Check of public.squads correct is.")
+        st.error("Fout bij ophalen spelerslijst.")
         st.code(e)
         st.stop()
 
     # --- B. DATA OPHALEN OP BASIS VAN ID ---
     st.divider()
     
-    # We gebruiken nu final_player_id in de WHERE clause (veiliger dan naam!)
     score_query = """
         SELECT 
             p.commonname,
@@ -165,12 +170,14 @@ if analysis_mode == "Spelers":
         WHERE a."iterationId" = %s AND a."playerId" = %s
     """
     
-    # Let op: de parameters moeten als Python 'native' types worden doorgegeven (int)
-    # Pandas/Numpy integers kunnen soms errors geven in psycopg2, dus we casten naar int()
     try:
-        # We moeten zeker weten dat we native ints doorgeven
+        # Casten naar Python int om zeker te zijn
         p_iter_id = int(selected_iteration_id)
-        p_player_id = int(final_player_id)
+        # Zorg dat final_player_id bestaat en een int is
+        if final_player_id is not None:
+             p_player_id = int(final_player_id)
+        else:
+             st.stop()
         
         df_scores = run_query(score_query, params=(p_iter_id, p_player_id))
         
@@ -196,82 +203,4 @@ if analysis_mode == "Spelers":
                 "Ballenafpakker (CVM)": row['ball_winning_dm_kvk_score'],
                 "Spelmaker (CVM)": row['playmaker_dm_kvk_score'],
                 "Box-to-Box (CM)": row['box_to_box_cm_kvk_score'],
-                "Diepgaande '10'": row['deep_running_acm_kvk_score'],
-                "Spelmakende '10'": row['playmaker_off_acm_kvk_score'],
-                "Buitenspeler (Binnendoor)": row['fa_inside_kvk_score'],
-                "Buitenspeler (Buitenom)": row['fa_wide_kvk_score'],
-                "Targetman": row['fw_target_kvk_score'],
-                "Lopende Spits": row['fw_running_kvk_score'],
-                "Afmaker": row['fw_finisher_kvk_score']
-            }
-            
-            active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
-            df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
-            
-            # --- C. BEREKENINGEN ---
-            top_profile_name = None
-            if not df_chart.empty:
-                df_chart = df_chart.sort_values(by='Score', ascending=False)
-                highest_row = df_chart.iloc[0]
-                if highest_row['Score'] > 66:
-                    top_profile_name = highest_row['Profiel']
-
-            def highlight_high_scores(val):
-                if isinstance(val, (int, float)) and val > 66:
-                    return 'color: #2ecc71; font-weight: bold'
-                return ''
-
-            # --- D. WEERGAVE ---
-            if top_profile_name:
-                st.success(f"### ✅ Speler is POSITIEF op data profiel: {top_profile_name}")
-            
-            col1, col2 = st.columns([1, 2])
-            
-            with col1:
-                st.subheader(f"{selected_player_name}")
-                st.write(f"**Positie:** {row['position']}")
-                # Optioneel: Toon ook even de teamnaam ter bevestiging als er dubbels waren
-                if len(candidate_rows) > 1:
-                     st.caption(f"Speler van: {selected_squad}")
-
-                st.write("Score per profiel:")
-                st.dataframe(
-                    df_chart.style.applymap(highlight_high_scores, subset=['Score'])
-                            .format({'Score': '{:.1f}'}),
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-            with col2:
-                if not df_chart.empty:
-                    fig = px.pie(
-                        df_chart, 
-                        values='Score', 
-                        names='Profiel', 
-                        title=f'KVK Profielverdeling',
-                        hole=0.4,
-                        color_discrete_sequence=['#d71920', '#ecf0f1', '#bdc3c7', '#c0392b'] 
-                    )
-                    fig.update_traces(
-                        textinfo='value', 
-                        textfont_size=15,
-                        marker=dict(line=dict(color='#000000', width=1))
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("Geen actieve profielscores gevonden.")
-                    
-        else:
-            st.error("Geen data gevonden voor deze speler ID.")
-
-    except Exception as e:
-        st.error("Er ging iets mis bij het ophalen van de details:")
-        st.code(e)
-
-elif analysis_mode == "Teams":
-    st.header("🛡️ Team Analyse")
-    st.warning("🚧 Aan deze module wordt nog gewerkt.")
-
-elif analysis_mode == "Coaches":
-    st.header("👔 Coach Analyse")
-    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+                "Diepgaande '10'": row['deep_running_acm_kvk_
