@@ -98,8 +98,6 @@ if analysis_mode == "Spelers":
     # --- A. SPELER SELECTIE MET DUPLICAAT CHECK ---
     st.sidebar.header("3. Speler Selectie")
     
-    # FIX: CAST(s."playerId" AS TEXT) om te matchen met p.id (text)
-    # FIX: CAST(s."squadId" AS TEXT) om te matchen met sq.id (text)
     players_query = """
         SELECT p.commonname, p.id as "playerId", sq.name as "squadName"
         FROM public.players p
@@ -149,7 +147,8 @@ if analysis_mode == "Spelers":
     # --- B. DATA OPHALEN OP BASIS VAN ID ---
     st.divider()
     
-    # FIX: CAST(a."playerId" AS TEXT) om te matchen met p.id
+    # BELANGRIJKE WIJZIGING: 
+    # We filteren op p.id (TEXT) in plaats van a.playerId. Dit voorkomt type conflicten.
     score_query = """
         SELECT 
             p.commonname,
@@ -167,14 +166,15 @@ if analysis_mode == "Spelers":
             a.fw_running_kvk_score, a.fw_finisher_kvk_score
         FROM analysis.final_impect_scores a
         JOIN public.players p ON CAST(a."playerId" AS TEXT) = p.id
-        WHERE a."iterationId" = %s AND a."playerId" = %s
+        WHERE a."iterationId" = %s AND p.id = %s
     """
     
     try:
-        # Cast parameters naar pure integers voor de analysis tabel
+        # p_iter_id moet INT zijn (want iterationId in analysis is int)
         p_iter_id = int(selected_iteration_id)
-        # final_player_id komt als string uit de public tabel, dus casten naar int
-        p_player_id = int(final_player_id)
+        
+        # p_player_id laten we als TEKST (string), want we filteren op p.id (tekst)
+        p_player_id = str(final_player_id)
         
         df_scores = run_query(score_query, params=(p_iter_id, p_player_id))
         
