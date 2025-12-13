@@ -230,4 +230,109 @@ if analysis_mode == "Spelers":
             col_bio1, col_bio2, col_bio3, col_bio4 = st.columns(4)
             with col_bio1: st.metric("Huidig Team", row['current_team_name'] if row['current_team_name'] else "Onbekend")
             with col_bio2: st.metric("Geboortedatum", str(row['birthdate']) if row['birthdate'] else "-")
-            with col_bio3: st.metric
+            with col_bio3: st.metric("Geboorteplaats", row['birthplace'] if row['birthplace'] else "-")
+            with col_bio4: st.metric("Voet", row['leg'] if row['leg'] else "-")
+            st.markdown("---")
+
+            # 2. PROFIEL SCORE (Taart)
+            profile_mapping = {
+                "KVK Centrale Verdediger": row['cb_kvk_score'], "KVK Wingback": row['wb_kvk_score'],
+                "KVK Verdedigende Mid.": row['dm_kvk_score'], "KVK Centrale Mid.": row['cm_kvk_score'],
+                "KVK Aanvallende Mid.": row['acm_kvk_score'], "KVK Flank Aanvaller": row['fa_kvk_score'],
+                "KVK Spits": row['fw_kvk_score'], "Voetballende CV": row['footballing_cb_kvk_score'],
+                "Controlerende CV": row['controlling_cb_kvk_score'], "Verdedigende Back": row['defensive_wb_kvk_score'],
+                "Aanvallende Back": row['offensive_wingback_kvk_score'], "Ballenafpakker (CVM)": row['ball_winning_dm_kvk_score'],
+                "Spelmaker (CVM)": row['playmaker_dm_kvk_score'], "Box-to-Box (CM)": row['box_to_box_cm_kvk_score'],
+                "Diepgaande '10'": row['deep_running_acm_kvk_score'], "Spelmakende '10'": row['playmaker_off_acm_kvk_score'],
+                "Buitenspeler (Binnendoor)": row['fa_inside_kvk_score'], "Buitenspeler (Buitenom)": row['fa_wide_kvk_score'],
+                "Targetman": row['fw_target_kvk_score'], "Lopende Spits": row['fw_running_kvk_score'],
+                "Afmaker": row['fw_finisher_kvk_score']
+            }
+            active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
+            df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
+            
+            top_profile_name = None
+            if not df_chart.empty:
+                df_chart = df_chart.sort_values(by='Score', ascending=False)
+                if df_chart.iloc[0]['Score'] > 66: top_profile_name = df_chart.iloc[0]['Profiel']
+
+            def highlight_high_scores(val):
+                if isinstance(val, (int, float)) and val > 66: return 'color: #2ecc71; font-weight: bold'
+                return ''
+
+            if top_profile_name: st.success(f"### ✅ Speler is POSITIEF op data profiel: {top_profile_name}")
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.write(f"**Positie:** {row['position']}")
+                st.dataframe(df_chart.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}), use_container_width=True, hide_index=True)
+            with c2:
+                if not df_chart.empty:
+                    fig = px.pie(df_chart, values='Score', names='Profiel', title=f'KVK Profielverdeling', hole=0.4, color_discrete_sequence=['#d71920', '#ecf0f1', '#bdc3c7', '#c0392b'])
+                    fig.update_traces(textinfo='value', textfont_size=15, marker=dict(line=dict(color='#000000', width=1)))
+                    st.plotly_chart(fig, use_container_width=True)
+
+            # --- 3. SPECIFIEKE METRIEKEN (PIRAMIDE OMLAAG) ---
+            st.markdown("---")
+            st.subheader("📊 Specifieke Metrieken")
+            
+            metrics_config = get_metrics_for_position(row['position'])
+            
+            if metrics_config:
+                
+                def get_metrics_table(metric_ids):
+                    if not metric_ids: return pd.DataFrame()
+                    # We zetten de metric ID's ook om naar string voor de zekerheid, 
+                    # voor het geval ze in je config als int staan (bijv. [66, 58])
+                    ids_tuple = tuple(str(x) for x in metric_ids)
+                    
+                    # SCHOONMAAK: Geen CAST meer nodig! 
+                    # We gaan ervan uit dat s.metric_id nu ook TEXT is in je DB.
+                    m_query = """
+                        SELECT 
+                            d.name as "Metriek",
+                            d.details_label as "Detail", 
+                            s.final_score_1_to_100 as "Score"
+                        FROM analysis.player_final_scores s
+                        JOIN public.player_score_definitions d ON s.metric_id = d.id
+                        WHERE s."iterationId" = %s
+                          AND s."playerId" = %s
+                          AND s.metric_id IN %s
+                        ORDER BY s.final_score_1_to_100 DESC
+                    """
+                    return run_query(m_query, params=(selected_iteration_id, p_player_id, ids_tuple))
+
+                df_aan_bal = get_metrics_table(metrics_config.get('aan_bal', []))
+                df_zonder_bal = get_metrics_table(metrics_config.get('zonder_bal', []))
+                
+                col_m1, col_m2 = st.columns(2)
+                
+                with col_m1:
+                    st.write("⚽ **Aan de Bal**")
+                    if not df_aan_bal.empty:
+                        st.dataframe(df_aan_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    else: st.caption("Geen data.")
+
+                with col_m2:
+                    st.write("🛡️ **Zonder Bal / Defensief**")
+                    if not df_zonder_bal.empty:
+                        st.dataframe(df_zonder_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    else: st.caption("Geen data.")
+                        
+            else:
+                st.info(f"Geen metrieken gevonden voor positie: '{row['position']}'")
+
+        else:
+            st.error("Geen data gevonden voor deze speler ID.")
+
+    except Exception as e:
+        st.error("Er ging iets mis bij het ophalen van de details:")
+        st.code(e)
+
+elif analysis_mode == "Teams":
+    st.header("🛡️ Team Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+
+elif analysis_mode == "Coaches":
+    st.header("👔 Coach Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
