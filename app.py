@@ -67,7 +67,7 @@ def get_metrics_for_position(db_position):
     elif pos in ["RIGHT_WINGER", "LEFT_WINGER"]:
         return POSITION_METRICS['winger']
         
-    elif pos == "CENTRAL_FORWARD":
+    elif pos == "CENTER_FORWARD":
         return POSITION_METRICS['center_forward']
     
     return None
