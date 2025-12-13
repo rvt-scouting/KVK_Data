@@ -9,7 +9,7 @@ import plotly.express as px
 st.set_page_config(page_title="KVK Scouting", page_icon="🔴", layout="wide")
 st.title("🔴⚪ KV Kortrijk - Data Scouting Platform")
 
-# --- MAPPING VAN POSITIES NAAR METRIC ID'S ---
+# --- MAPPING: SPELER SCORES (De "Metrieken") ---
 POSITION_METRICS = {
     "central_defender": {
         "aan_bal": [66, 58, 64, 10, 163],
@@ -41,26 +41,59 @@ POSITION_METRICS = {
     }
 }
 
-def get_metrics_for_position(db_position):
+# --- MAPPING: SPELER KPIS (De "Onderliggende Data") ---
+POSITION_KPIS = {
+    "central_defender": {
+        "aan_bal": [107, 106, 1534, 21, 2, 0, 1405, 1422],
+        "zonder_bal": [1016, 1015, 1014, 24, 867, 1409]
+    },
+    "wingback": {
+        "aan_bal": [172, 171, 2, 9, 0],
+        "zonder_bal": [23, 27, 1409, 1536, 1523]
+    },
+    "defensive_midfield": {
+        "aan_bal": [184, 0, 107, 87, 106, 109, 122, 1422, 1423],
+        "zonder_bal": [21, 23, 27, 865, 867, 619, 1536, 1610]
+    },
+    "central_midfield": {
+        "aan_bal": [0, 1405, 1425],
+        "zonder_bal": [23, 27, 24, 1536]
+    },
+    "attacking_midfield": {
+        "aan_bal": [77, 1350, 2, 169, 167, 467, 0, 7, 141, 1425, 1422, 1423, 1253, 1252, 1254],
+        "zonder_bal": [1536]
+    },
+    "winger": {
+        "aan_bal": [25, 2, 88, 172, 171, 167, 9, 87, 7, 1401, 1425],
+        "zonder_bal": [1536]
+    },
+    "center_forward": {
+        "aan_bal": [9, 427, 426, 1401, 82],
+        "zonder_bal": [1536]
+    }
+}
+
+# Functie om de juiste config op te halen (Werkt voor zowel Metrics als KPIs)
+def get_config_for_position(db_position, config_dict):
     if not db_position:
         return None
     
     pos = str(db_position).upper().strip()
     
     if pos == "CENTRAL_DEFENDER":
-        return POSITION_METRICS['central_defender']
+        return config_dict.get('central_defender')
     elif pos in ["RIGHT_WINGBACK_DEFENDER", "LEFT_WINGBACK_DEFENDER"]:
-        return POSITION_METRICS['wingback']
+        return config_dict.get('wingback')
     elif pos in ["DEFENSIVE_MIDFIELD", "DEFENSE_MIDFIELD"]:
-        return POSITION_METRICS['defensive_midfield']
+        return config_dict.get('defensive_midfield')
     elif pos == "CENTRAL_MIDFIELD":
-        return POSITION_METRICS['central_midfield']
+        return config_dict.get('central_midfield')
     elif pos in ["ATTACKING_MIDFIELD", "OFFENSIVE_MIDFIELD"]:
-        return POSITION_METRICS['attacking_midfield']
+        return config_dict.get('attacking_midfield')
     elif pos in ["RIGHT_WINGER", "LEFT_WINGER"]:
-        return POSITION_METRICS['winger']
+        return config_dict.get('winger')
     elif pos in ["CENTER_FORWARD", "STRIKER"]:
-        return POSITION_METRICS['center_forward']
+        return config_dict.get('center_forward')
     
     return None
 
@@ -153,7 +186,6 @@ if analysis_mode == "Spelers":
     # --- A. SPELER SELECTIE ---
     st.sidebar.header("3. Speler Selectie")
     
-    # SCHOONMAAK: Geen CAST meer nodig, alles is tekst!
     players_query = """
         SELECT p.commonname, p.id as "playerId", sq.name as "squadName"
         FROM public.players p
@@ -164,7 +196,6 @@ if analysis_mode == "Spelers":
     """
     
     try:
-        # We sturen gewoon de string ID door
         df_players = run_query(players_query, params=(selected_iteration_id,))
         
         unique_names = df_players['commonname'].unique().tolist()
@@ -196,7 +227,6 @@ if analysis_mode == "Spelers":
     # --- B. HOOFD PROFIELEN & BIO ---
     st.divider()
     
-    # SCHOONMAAK: Geen CAST meer nodig
     score_query = """
         SELECT 
             p.commonname, a.position, p.birthdate, p.birthplace, p.leg,
@@ -217,7 +247,6 @@ if analysis_mode == "Spelers":
     """
     
     try:
-        # Zorg dat player ID ook string is
         p_player_id = str(final_player_id)
         
         df_scores = run_query(score_query, params=(selected_iteration_id, p_player_id))
@@ -272,29 +301,26 @@ if analysis_mode == "Spelers":
                     fig.update_traces(textinfo='value', textfont_size=15, marker=dict(line=dict(color='#000000', width=1)))
                     st.plotly_chart(fig, use_container_width=True)
 
-            # --- 3. SPECIFIEKE METRIEKEN (PIRAMIDE OMLAAG) ---
+
+            # =========================================================
+            # 3. SPECIFIEKE METRIEKEN (PIRAMIDE LAAG 2)
+            # =========================================================
             st.markdown("---")
             st.subheader("📊 Impect Speler Scores")
             
-            metrics_config = get_metrics_for_position(row['position'])
+            metrics_config = get_config_for_position(row['position'], POSITION_METRICS)
             
             if metrics_config:
-                
                 def get_metrics_table(metric_ids):
                     if not metric_ids: return pd.DataFrame()
-                    # We zetten de metric ID's ook om naar string voor de zekerheid, 
-                    # voor het geval ze in je config als int staan (bijv. [66, 58])
                     ids_tuple = tuple(str(x) for x in metric_ids)
-                    
-                    # SCHOONMAAK: Geen CAST meer nodig! 
-                    # We gaan ervan uit dat s.metric_id nu ook TEXT is in je DB.
                     m_query = """
                         SELECT 
                             d.name as "Metriek",
                             d.details_label as "Detail", 
                             s.final_score_1_to_100 as "Score"
                         FROM analysis.player_final_scores s
-                        JOIN public.player_score_definitions d ON s.metric_id = d.id
+                        JOIN public.player_score_definitions d ON CAST(s.metric_id AS TEXT) = d.id
                         WHERE s."iterationId" = %s
                           AND s."playerId" = %s
                           AND s.metric_id IN %s
@@ -306,21 +332,61 @@ if analysis_mode == "Spelers":
                 df_zonder_bal = get_metrics_table(metrics_config.get('zonder_bal', []))
                 
                 col_m1, col_m2 = st.columns(2)
-                
                 with col_m1:
                     st.write("⚽ **Aan de Bal**")
-                    if not df_aan_bal.empty:
-                        st.dataframe(df_aan_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    if not df_aan_bal.empty: st.dataframe(df_aan_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
                     else: st.caption("Geen data.")
-
                 with col_m2:
                     st.write("🛡️ **Zonder Bal / Defensief**")
-                    if not df_zonder_bal.empty:
-                        st.dataframe(df_zonder_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
-                    else: st.caption("Geen data.")
-                        
+                    if not df_zonder_bal.empty: st.dataframe(df_zonder_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    else: st.caption("Geen data.")     
             else:
                 st.info(f"Geen metrieken gevonden voor positie: '{row['position']}'")
+
+
+            # =========================================================
+            # 4. IMPECT KPIS (PIRAMIDE LAAG 3) - NIEUW
+            # =========================================================
+            st.markdown("---")
+            st.subheader("📈 Impect Speler KPIs")
+            
+            kpis_config = get_config_for_position(row['position'], POSITION_KPIS)
+            
+            if kpis_config:
+                def get_kpis_table(kpi_ids):
+                    if not kpi_ids: return pd.DataFrame()
+                    ids_tuple = tuple(str(x) for x in kpi_ids)
+                    
+                    # Query op basis van kpis_final_scores en kpi_definitions
+                    k_query = """
+                        SELECT 
+                            d.name as "KPI",
+                            d.context as "Context", 
+                            s.final_score_1_to_100 as "Score"
+                        FROM analysis.kpis_final_scores s
+                        JOIN analysis.kpi_definitions d ON CAST(s.metric_id AS TEXT) = d.id
+                        WHERE s."iterationId" = %s
+                          AND s."playerId" = %s
+                          AND s.metric_id IN %s
+                        ORDER BY s.final_score_1_to_100 DESC
+                    """
+                    return run_query(k_query, params=(selected_iteration_id, p_player_id, ids_tuple))
+
+                df_kpi_aan_bal = get_kpis_table(kpis_config.get('aan_bal', []))
+                df_kpi_zonder_bal = get_kpis_table(kpis_config.get('zonder_bal', []))
+                
+                col_k1, col_k2 = st.columns(2)
+                with col_k1:
+                    st.write("⚽ **Aan de Bal (KPIs)**")
+                    if not df_kpi_aan_bal.empty: st.dataframe(df_kpi_aan_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    else: st.caption("Geen KPI data.")
+                with col_k2:
+                    st.write("🛡️ **Zonder Bal / Defensief (KPIs)**")
+                    if not df_kpi_zonder_bal.empty: st.dataframe(df_kpi_zonder_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    else: st.caption("Geen KPI data.")     
+            else:
+                st.info(f"Geen KPIs gevonden voor positie: '{row['position']}'")
+
 
         else:
             st.error("Geen data gevonden voor deze speler ID.")
