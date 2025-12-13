@@ -9,7 +9,6 @@ import plotly.express as px
 st.set_page_config(page_title="Scouting App", page_icon="⚽", layout="wide")
 st.title("⚽ Voetbal Data Analyse")
 
-# Database connectie functie (gecached)
 @st.cache_resource
 def init_connection():
     return psycopg2.connect(
@@ -20,28 +19,26 @@ def init_connection():
         password=st.secrets["postgres"]["password"]
     )
 
-# Functie om queries uit te voeren
 def run_query(query, params=None):
     conn = init_connection()
-    # We gebruiken pandas om SQL direct om te zetten naar een DataFrame
     return pd.read_sql(query, conn, params=params)
 
 # -----------------------------------------------------------------------------
-# 2. SIDEBAR FILTERS (Context Bepalen)
+# 2. SIDEBAR FILTERS
 # -----------------------------------------------------------------------------
 st.sidebar.header("1. Selecteer Data")
 
-# Stap A: Seizoen Selecteren
+# Seizoen
 season_query = "SELECT DISTINCT season FROM public.iterations ORDER BY season DESC;"
 try:
     df_seasons = run_query(season_query)
     seasons_list = df_seasons['season'].tolist()
     selected_season = st.sidebar.selectbox("Seizoen:", seasons_list)
 except Exception as e:
-    st.error("Kon seizoenen niet laden. Check database connectie.")
+    st.error("Kon seizoenen niet laden.")
     st.stop()
 
-# Stap B: Competitie Selecteren (afhankelijk van seizoen)
+# Competitie
 if selected_season:
     competition_query = """
         SELECT DISTINCT "competitionName" 
@@ -58,7 +55,7 @@ else:
 st.sidebar.divider() 
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR MODUS (De Schakelaar)
+# 3. ANALYSE MODUS
 # -----------------------------------------------------------------------------
 st.sidebar.header("2. Analyse Niveau")
 analysis_mode = st.sidebar.radio(
@@ -67,12 +64,11 @@ analysis_mode = st.sidebar.radio(
 )
 
 # -----------------------------------------------------------------------------
-# 4. CONTEXT DATA OPHALEN (Het ID vinden)
+# 4. ITERATION ID OPHALEN
 # -----------------------------------------------------------------------------
 selected_iteration_id = None
 
 if selected_season and selected_competition:
-    # We halen het iterationId op om verder te gebruiken
     details_query = """
         SELECT season, "competitionName", id
         FROM public.iterations 
@@ -95,12 +91,12 @@ else:
 # 5. HOOFDSCHERM LOGICA
 # -----------------------------------------------------------------------------
 
-# === 5. HOOFDSCHERM LOGICA ===
-
 if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
     
-    # --- A. EEN SPELER KIEZEN (DROPDOWN) ---
+    # --- A. SPELER SELECTIE ---
+    st.sidebar.header("3. Speler Selectie")
+    
     players_query = """
         SELECT DISTINCT p.commonname
         FROM public.players p
@@ -112,57 +108,38 @@ if analysis_mode == "Spelers":
     try:
         df_players = run_query(players_query, params=(selected_iteration_id,))
         player_names = df_players['commonname'].tolist()
-        
-        # VERANDERING: Selectbox in plaats van Multiselect voor 1 speler
-        selected_player = st.sidebar.selectbox("Zoek een speler:", player_names)
+        selected_player = st.sidebar.selectbox("Kies een speler:", player_names)
         
     except Exception as e:
         st.error("Fout bij ophalen spelersnamen.")
-        st.code(e)
         st.stop()
 
-    # --- B. DATA OPHALEN VOOR DEZE SPELER ---
+    # --- B. DATA OPHALEN ---
     st.divider()
     
-    # We halen nu de specifieke profiel scores op
-    # Ik pak de kolommen uit je analysis.final_impect_scores tabel
     score_query = """
         SELECT 
             p.commonname,
             a.position,
-            -- Verdedigende rollen
-            a.footballing_cb_kvk_score,
-            a.controlling_cb_kvk_score,
-            a.defensive_wb_kvk_score,
-            a.offensive_wingback_kvk_score,
-            -- Middenveld rollen
-            a.ball_winning_dm_kvk_score,
-            a.playmaker_dm_kvk_score,
-            a.box_to_box_cm_kvk_score,
-            a.deep_running_acm_kvk_score,
-            a.playmaker_off_acm_kvk_score,
-            -- Aanvallende rollen
-            a.fa_inside_kvk_score,
-            a.fa_wide_kvk_score,
-            a.fw_target_kvk_score,
-            a.fw_running_kvk_score,
-            a.fw_finisher_kvk_score
+            a.footballing_cb_kvk_score, a.controlling_cb_kvk_score,
+            a.defensive_wb_kvk_score, a.offensive_wingback_kvk_score,
+            a.ball_winning_dm_kvk_score, a.playmaker_dm_kvk_score,
+            a.box_to_box_cm_kvk_score, a.deep_running_acm_kvk_score,
+            a.playmaker_off_acm_kvk_score, a.fa_inside_kvk_score,
+            a.fa_wide_kvk_score, a.fw_target_kvk_score,
+            a.fw_running_kvk_score, a.fw_finisher_kvk_score
         FROM analysis.final_impect_scores a
         JOIN public.players p ON a."playerId" = p.id
         WHERE a."iterationId" = %s AND p.commonname = %s
     """
     
     try:
-        # We halen de data op voor die ene speler
         df_scores = run_query(score_query, params=(selected_iteration_id, selected_player))
         
         if not df_scores.empty:
-            # We pakken de eerste (en enige) rij
             row = df_scores.iloc[0]
             
-            # --- C. DATA VOORBEREIDEN VOOR PIE CHART ---
-            # We maken een dictionary met leesbare namen voor de kolommen
-            # Hier koppelen we de database kolomnaam aan een mooi label
+            # Mapping maken
             profile_mapping = {
                 "Voetballende Verdediger": row['footballing_cb_kvk_score'],
                 "Controlerende Verdediger": row['controlling_cb_kvk_score'],
@@ -180,35 +157,72 @@ if analysis_mode == "Spelers":
                 "Afmaker": row['fw_finisher_kvk_score']
             }
             
-            # Nu filteren we alle 'None' (lege) waardes en 0 waardes eruit
-            # We willen alleen tonen waar de speler daadwerkelijk een rol in heeft
+            # Filteren
             active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
-            
-            # We maken hier weer een klein dataframe van voor de grafiek
             df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
             
+            # --- C. DE BEREKENINGEN (Highlight & Callout) ---
+            
+            # 1. Zoek de hoogste score
+            top_profile_name = None
+            top_profile_score = 0
+            
+            if not df_chart.empty:
+                # Sorteer zodat de hoogste bovenaan staat (voor de zekerheid)
+                df_chart = df_chart.sort_values(by='Score', ascending=False)
+                
+                highest_row = df_chart.iloc[0]
+                if highest_row['Score'] > 66:
+                    top_profile_name = highest_row['Profiel']
+                    top_profile_score = highest_row['Score']
+
+            # 2. Styling Functie voor de Tabel
+            def highlight_high_scores(val):
+                """Maakt de tekst groen en vetgedrukt als score > 66"""
+                if isinstance(val, (int, float)) and val > 66:
+                    return 'color: #2ecc71; font-weight: bold' # Mooi fel groen
+                return ''
+
             # --- D. WEERGAVE ---
+            
+            # Eerst de Callout tonen (groot bovenaan het blok)
+            if top_profile_name:
+                st.success(f"### ✅ Speler is POSITIEF op data profiel: {top_profile_name}")
+            
             col1, col2 = st.columns([1, 2])
             
             with col1:
                 st.subheader(f"{selected_player}")
                 st.write(f"**Positie:** {row['position']}")
-                # Toon de ruwe tabel ook nog even (optioneel)
-                st.dataframe(df_chart, hide_index=True)
+                st.write("Score per profiel:")
+                
+                # Pas de styling toe op de tabel
+                # We formatteren de getallen ook meteen met 1 decimaal (indien nodig)
+                st.dataframe(
+                    df_chart.style.applymap(highlight_high_scores, subset=['Score'])
+                            .format({'Score': '{:.1f}'}),
+                    use_container_width=True,
+                    hide_index=True
+                )
                 
             with col2:
                 if not df_chart.empty:
-                    # De Pie Chart maken met Plotly
+                    # De Pie Chart met aangepaste kleuren
                     fig = px.pie(
                         df_chart, 
                         values='Score', 
                         names='Profiel', 
-                        title=f'Profielverdeling: {selected_player}',
-                        hole=0.4 # Dit maakt er een 'Donut chart' van, ziet er vaak moderner uit
+                        title=f'Profielverdeling',
+                        hole=0.4,
+                        # Hier stellen we de kleuren in:
+                        color_discrete_sequence=['#e74c3c', '#ecf0f1', '#3498db'] # Rood, Wit (beetje grijs voor zichtbaarheid), Blauw
                     )
+                    # Zorg dat de witte tekst leesbaar is of randjes heeft
+                    fig.update_traces(textinfo='percent+label', marker=dict(line=dict(color='#000000', width=1)))
+                    
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.warning("Geen profielscores gevonden voor deze speler.")
+                    st.warning("Geen actieve profielscores gevonden.")
                     
         else:
             st.error("Geen data gevonden voor deze speler.")
@@ -217,14 +231,10 @@ if analysis_mode == "Spelers":
         st.error("Er ging iets mis bij het ophalen van de details:")
         st.code(e)
 
-# === MODUS: TEAMS ===
 elif analysis_mode == "Teams":
     st.header("🛡️ Team Analyse")
     st.warning("🚧 Aan deze module wordt nog gewerkt.")
-    st.write("Hier tonen we later data uit `analysis.squad_final_scores`.")
 
-# === MODUS: COACHES ===
 elif analysis_mode == "Coaches":
     st.header("👔 Coach Analyse")
     st.warning("🚧 Aan deze module wordt nog gewerkt.")
-    st.write("Hier tonen we later data over de technische staf.")
