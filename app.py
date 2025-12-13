@@ -466,7 +466,7 @@ elif analysis_mode == "Teams":
                 with col_name:
                     st.header(f"🛡️ {team_name_display}")
                     
-                # --- NIEUW: TEAM PROFIELEN (Tabel + Bar Chart) ---
+                # --- TEAM PROFIELEN ---
                 st.divider()
                 st.subheader("📊 Team Profiel Scores")
                 
@@ -483,7 +483,6 @@ elif analysis_mode == "Teams":
                     if not df_profiles.empty:
                         col_prof_table, col_prof_chart = st.columns([1, 2])
                         
-                        # Hergebruik de highlight functie
                         def highlight_high_scores(val):
                             if isinstance(val, (int, float)) and val > 66: return 'color: #2ecc71; font-weight: bold'
                             return ''
@@ -496,22 +495,51 @@ elif analysis_mode == "Teams":
                             )
                             
                         with col_prof_chart:
-                            # Bar chart
                             fig_profiles = px.bar(
                                 df_profiles, 
                                 x='Profiel', 
                                 y='Score',
                                 title="Score per Profiel",
-                                color_discrete_sequence=['#d71920'] # KVK Rood
+                                color_discrete_sequence=['#d71920']
                             )
                             st.plotly_chart(fig_profiles, use_container_width=True)
                             
                     else:
                         st.info("Geen profielscores gevonden voor dit team.")
-                
+                        
                 except Exception as e:
                     st.error("Fout bij ophalen team profielen.")
                     st.code(e)
+                    
+                # --- NIEUW: TEAM KPIs (Uitklapbaar) ---
+                with st.expander("📉 Team Impect KPIs (Details)", expanded=False):
+                    
+                    # Hier gebruiken we REPLACE om de 'k' te strippen voor de JOIN
+                    kpi_query = """
+                        SELECT 
+                            d.name as "KPI",
+                            s.final_score_1_to_100 as "Score"
+                        FROM analysis.squadkpi_final_score s
+                        JOIN analysis.kpi_definitions d ON d.id = REPLACE(s.metric_id, 'k', '')
+                        WHERE s."squadId" = %s AND s."iterationId" = %s
+                        ORDER BY s.final_score_1_to_100 DESC
+                    """
+                    
+                    try:
+                        df_kpis = run_query(kpi_query, params=(final_squad_id, selected_iteration_id))
+                        
+                        if not df_kpis.empty:
+                            st.dataframe(
+                                df_kpis.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                        else:
+                            st.info("Geen KPI data gevonden.")
+                            
+                    except Exception as e:
+                        st.error("Fout bij ophalen Team KPIs")
+                        st.code(e)
                 
             else:
                 st.error("Kon team details niet ophalen.")
