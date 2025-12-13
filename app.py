@@ -627,8 +627,8 @@ elif analysis_mode == "Teams":
                             sim = sim.sort_values(ascending=False)
                             sim = sim[sim.index != (final_squad_id, team_row['name'], current_season)]
                             
-                            top_5 = sim.head(5).reset_index()
-                            top_5.columns = ['ID', 'Team', 'Seizoen', 'Gelijkenis %']
+                            top_10 = sim.head(10).reset_index()
+                            top_10.columns = ['ID', 'Team', 'Seizoen', 'Gelijkenis %']
                             
                             def color_sim(val):
                                 color = '#2ecc71' if val > 90 else '#27ae60' if val > 80 else 'black'
