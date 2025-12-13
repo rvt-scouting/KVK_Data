@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import plotly.express as px
+import numpy as np # Nodig voor de berekening
 
 # -----------------------------------------------------------------------------
 # 1. CONFIGURATIE & SETUP
@@ -165,7 +166,6 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
-        # ID is tekst
         selected_iteration_id = str(df_details.iloc[0]['id'])
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -513,7 +513,6 @@ elif analysis_mode == "Teams":
                 
                 # Styling functie voor Inverted cellen
                 def highlight_inverted(val):
-                    # Check of waarde 'True' is (als string of bool)
                     if str(val).lower().strip() == 'true':
                         return 'background-color: #e74c3c; color: white; font-weight: bold'
                     return ''
@@ -584,6 +583,73 @@ elif analysis_mode == "Teams":
                     except Exception as e:
                         st.error("Fout bij ophalen Team KPIs")
                         st.code(e)
+
+                # --- 3. VERGELIJKBARE TEAMS (SIMILARITY) ---
+                st.markdown("---")
+                st.subheader("🤝 Vergelijkbare Teams")
+                st.caption("Gebaseerd op de 4 profielscores over alle seizoenen.")
+
+                # 1. Haal ALLE profielscores op van ALLE teams uit ALLE seizoenen
+                all_profiles_query = """
+                    SELECT s."squadId", sq.name as "Team", i.season as "Seizoen", s.profile_name, s.score
+                    FROM analysis.squad_profile_scores s
+                    JOIN public.squads sq ON s."squadId" = sq.id
+                    JOIN public.iterations i ON s."iterationId" = i.id
+                """
+                
+                try:
+                    df_all_profiles = run_query(all_profiles_query)
+                    
+                    if not df_all_profiles.empty:
+                        # 2. Pivot de data: Rij = (Team, Seizoen), Kolom = Profiel
+                        df_pivot = df_all_profiles.pivot_table(
+                            index=['squadId', 'Team', 'Seizoen'], 
+                            columns='profile_name', 
+                            values='score'
+                        ).fillna(0)
+                        
+                        # 3. Zoek de 'target' vector (het geselecteerde team in dit seizoen)
+                        # We moeten de juiste index vinden
+                        
+                        # Eerst even de seizoen naam ophalen van het geselecteerde ID
+                        current_season_name = selected_season # Die hebben we in de sidebar
+                        
+                        if (final_squad_id, team_name_display, current_season_name) in df_pivot.index:
+                            target_vector = df_pivot.loc[(final_squad_id, team_name_display, current_season_name)]
+                            
+                            # 4. Bereken verschil met alle andere rijen
+                            # We gebruiken de gemiddelde absolute afwijking om een % te maken
+                            # Gelijkenis = 100 - Gemiddeld verschil
+                            diff = (df_pivot - target_vector).abs().mean(axis=1)
+                            similarity = 100 - diff
+                            
+                            # 5. Sorteren en top 5 pakken (zonder zichzelf)
+                            similarity = similarity.sort_values(ascending=False)
+                            
+                            # Filter zichzelf eruit (obv index)
+                            similarity = similarity[similarity.index != (final_squad_id, team_name_display, current_season_name)]
+                            
+                            top_5 = similarity.head(5).reset_index()
+                            top_5.columns = ['ID', 'Team', 'Seizoen', 'Gelijkenis %']
+                            
+                            # Toon de tabel
+                            st.dataframe(
+                                top_5[['Team', 'Seizoen', 'Gelijkenis %']]
+                                .style.format({'Gelijkenis %': '{:.1f}%'})
+                                .background_gradient(cmap='Greens', subset=['Gelijkenis %']),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                            
+                        else:
+                            st.warning("Kon de vector voor dit team niet vinden in de dataset voor vergelijking.")
+                            
+                    else:
+                        st.error("Kon geen referentiedata ophalen voor vergelijking.")
+
+                except Exception as e:
+                    st.error("Fout bij berekenen vergelijkbare teams.")
+                    st.code(e)
                 
             else:
                 st.error("Kon team details niet ophalen.")
