@@ -89,7 +89,7 @@ if analysis_mode == "Spelers":
     # Postgres is hoofdlettergevoelig bij namen tussen dubbele quotes.
     
     players_query = """
-        SELECT DISTINCT p."commonName"
+        SELECT DISTINCT p."commonname"
         FROM public.players p
         JOIN analysis.final_impect_scores s ON p.id = s.playerId
         WHERE s.iterationId = %s
