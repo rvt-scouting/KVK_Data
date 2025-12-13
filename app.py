@@ -9,7 +9,7 @@ import plotly.express as px
 st.set_page_config(page_title="KVK Scouting", page_icon="🔴", layout="wide")
 st.title("🔴⚪ KV Kortrijk - Data Scouting Platform")
 
-# --- MAPPING VAN POSITIES NAAR METRIC ID'S ---
+# --- MAPPING: SPELER SCORES ---
 POSITION_METRICS = {
     "central_defender": {
         "aan_bal": [66, 58, 64, 10, 163],
@@ -165,7 +165,6 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
-        # DIT IS NU TEKST (STRING)
         selected_iteration_id = str(df_details.iloc[0]['id'])
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -392,14 +391,42 @@ if analysis_mode == "Spelers":
             st.info("🚧 Hier komen de sterke en zwakke punten van de speler (gegenereerd of handmatig).")
 
             # =========================================================
-            # 6. RAPPORTEN (PLACEHOLDERS)
+            # 6. RAPPORTEN
             # =========================================================
             st.markdown("---")
             col_rep1, col_rep2 = st.columns(2)
             
             with col_rep1:
                 st.subheader("📑 Data Scout Rapporten")
-                st.warning("🚧 Nog geen data rapporten beschikbaar.")
+                
+                # --- NIEUW: Data Scout Rapporten Query ---
+                reports_query = """
+                    SELECT 
+                        m."scheduleDate" as "Datum",
+                        sq_h.name as "Thuisploeg",
+                        sq_a.name as "Uitploeg",
+                        r.position as "Positie",
+                        r.label as "Verdict"
+                    FROM analysis.scouting_reports r
+                    JOIN public.matches m ON CAST(r."matchId" AS TEXT) = m.id
+                    LEFT JOIN public.squads sq_h ON m."homeSquadId" = sq_h.id
+                    LEFT JOIN public.squads sq_a ON m."awaySquadId" = sq_a.id
+                    WHERE r."iterationId" = %s
+                      AND r."playerId" = %s
+                      AND m.available = true
+                    ORDER BY m."scheduleDate" DESC
+                """
+                
+                try:
+                    df_reports = run_query(reports_query, params=(selected_iteration_id, p_player_id))
+                    
+                    if not df_reports.empty:
+                        st.dataframe(df_reports, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Geen data rapporten gevonden voor deze speler.")
+                except Exception as e:
+                    st.error("Kon rapporten niet laden.")
+                    st.code(e)
                 
             with col_rep2:
                 st.subheader("👀 Scout Rapporten")
