@@ -185,7 +185,6 @@ if analysis_mode == "Spelers":
     # --- A. SPELER SELECTIE ---
     st.sidebar.header("3. Speler Selectie")
     
-    # ALLES IS TEKST, GEEN CAST NODIG
     players_query = """
         SELECT p.commonname, p.id as "playerId", sq.name as "squadName"
         FROM public.players p
@@ -393,47 +392,62 @@ if analysis_mode == "Spelers":
             st.info("🚧 Hier komen de sterke en zwakke punten van de speler (gegenereerd of handmatig).")
 
             # =========================================================
-            # 6. RAPPORTEN
+            # 6. RAPPORTEN (GEWIJZIGD)
             # =========================================================
             st.markdown("---")
-            col_rep1, col_rep2 = st.columns(2)
-            
-            with col_rep1:
-                st.subheader("📑 Data Scout Rapporten")
-                
-                # FIX: scheduledDate met een 'd', en geen CAST meer
-                reports_query = """
-                    SELECT 
-                        m."scheduledDate" as "Datum",
-                        sq_h.name as "Thuisploeg",
-                        sq_a.name as "Uitploeg",
-                        r.position as "Positie",
-                        r.label as "Verdict"
-                    FROM analysis.scouting_reports r
-                    JOIN public.matches m ON r."matchId" = m.id
-                    LEFT JOIN public.squads sq_h ON m."homeSquadId" = sq_h.id
-                    LEFT JOIN public.squads sq_a ON m."awaySquadId" = sq_a.id
-                    WHERE r."iterationId" = %s
-                      AND r."playerId" = %s
-                      AND m.available = true
-                    ORDER BY m."scheduledDate" DESC
-                """
-                
-                try:
-                    df_reports = run_query(reports_query, params=(selected_iteration_id, p_player_id))
-                    
-                    if not df_reports.empty:
-                        st.dataframe(df_reports, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("Geen data rapporten gevonden voor deze speler.")
-                except Exception as e:
-                    st.error("Kon rapporten niet laden.")
-                    st.code(e)
-                
-            with col_rep2:
-                st.subheader("👀 Scout Rapporten")
-                st.warning("🚧 Nog geen fysieke scouting rapporten beschikbaar.")
+            st.subheader("📑 Data Scout Rapporten")
 
+            reports_query = """
+                SELECT 
+                    m."scheduledDate" as "Datum",
+                    sq_h.name as "Thuisploeg",
+                    sq_a.name as "Uitploeg",
+                    r.position as "Positie",
+                    r.label as "Verdict"
+                FROM analysis.scouting_reports r
+                JOIN public.matches m ON r."matchId" = m.id
+                LEFT JOIN public.squads sq_h ON m."homeSquadId" = sq_h.id
+                LEFT JOIN public.squads sq_a ON m."awaySquadId" = sq_a.id
+                WHERE r."iterationId" = %s
+                  AND r."playerId" = %s
+                  AND m.available = true
+                ORDER BY m."scheduledDate" DESC
+            """
+            
+            try:
+                df_reports = run_query(reports_query, params=(selected_iteration_id, p_player_id))
+                
+                if not df_reports.empty:
+                    # Layout: 2 Kolommen (Tabel links, Chart rechts)
+                    col_rep_table, col_rep_chart = st.columns([2, 1])
+                    
+                    with col_rep_table:
+                        st.dataframe(df_reports, use_container_width=True, hide_index=True)
+                        
+                    with col_rep_chart:
+                        # Pie chart van de Verdicts
+                        verdict_counts = df_reports['Verdict'].value_counts().reset_index()
+                        verdict_counts.columns = ['Verdict', 'Aantal']
+                        
+                        fig_verdict = px.pie(
+                            verdict_counts, 
+                            values='Aantal', 
+                            names='Verdict', 
+                            title='Verdeling Verdicts',
+                            hole=0.4,
+                            color_discrete_sequence=['#d71920', '#bdc3c7', '#ecf0f1', '#c0392b']
+                        )
+                        st.plotly_chart(fig_verdict, use_container_width=True)
+                else:
+                    st.info("Geen data rapporten gevonden voor deze speler.")
+            except Exception as e:
+                st.error("Kon rapporten niet laden.")
+                st.code(e)
+            
+            # SCOUT RAPPORTEN NU HIERONDER
+            st.markdown("---")
+            st.subheader("👀 Scout Rapporten")
+            st.warning("🚧 Nog geen fysieke scouting rapporten beschikbaar.")
 
         else:
             st.error("Geen data gevonden voor deze speler ID.")
