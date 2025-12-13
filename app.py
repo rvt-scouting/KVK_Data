@@ -2,10 +2,13 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 
+# -----------------------------------------------------------------------------
+# 1. CONFIGURATIE & SETUP
+# -----------------------------------------------------------------------------
 st.set_page_config(page_title="Scouting App", page_icon="⚽", layout="wide")
 st.title("⚽ Voetbal Data Analyse")
 
-# --- 1. SETUP & VERBINDING ---
+# Database connectie functie (gecached)
 @st.cache_resource
 def init_connection():
     return psycopg2.connect(
@@ -16,20 +19,28 @@ def init_connection():
         password=st.secrets["postgres"]["password"]
     )
 
+# Functie om queries uit te voeren
 def run_query(query, params=None):
     conn = init_connection()
+    # We gebruiken pandas om SQL direct om te zetten naar een DataFrame
     return pd.read_sql(query, conn, params=params)
 
-# --- 2. SIDEBAR FILTERS (CONTEXT) ---
+# -----------------------------------------------------------------------------
+# 2. SIDEBAR FILTERS (Context Bepalen)
+# -----------------------------------------------------------------------------
 st.sidebar.header("1. Selecteer Data")
 
-# Stap A: Seizoen
+# Stap A: Seizoen Selecteren
 season_query = "SELECT DISTINCT season FROM public.iterations ORDER BY season DESC;"
-df_seasons = run_query(season_query)
-seasons_list = df_seasons['season'].tolist()
-selected_season = st.sidebar.selectbox("Seizoen:", seasons_list)
+try:
+    df_seasons = run_query(season_query)
+    seasons_list = df_seasons['season'].tolist()
+    selected_season = st.sidebar.selectbox("Seizoen:", seasons_list)
+except Exception as e:
+    st.error("Kon seizoenen niet laden. Check database connectie.")
+    st.stop()
 
-# Stap B: Competitie
+# Stap B: Competitie Selecteren (afhankelijk van seizoen)
 if selected_season:
     competition_query = """
         SELECT DISTINCT "competitionName" 
@@ -43,20 +54,24 @@ if selected_season:
 else:
     selected_competition = None
 
-st.sidebar.divider() # Een lijntje
+st.sidebar.divider() 
 
-# --- 3. SIDEBAR MODUS (DE SCHAKELAAR) ---
+# -----------------------------------------------------------------------------
+# 3. SIDEBAR MODUS (De Schakelaar)
+# -----------------------------------------------------------------------------
 st.sidebar.header("2. Analyse Niveau")
-# Hier maken we de keuze. We gebruiken 'radio' knoppen omdat je er maar 1 tegelijk mag kiezen.
 analysis_mode = st.sidebar.radio(
     "Wat wil je analyseren?",
     ["Spelers", "Teams", "Coaches"]
 )
 
-# --- 4. DATA OPHALEN (CONTEXT) ---
+# -----------------------------------------------------------------------------
+# 4. CONTEXT DATA OPHALEN (Het ID vinden)
+# -----------------------------------------------------------------------------
 selected_iteration_id = None
 
 if selected_season and selected_competition:
+    # We halen het iterationId op om verder te gebruiken
     details_query = """
         SELECT season, "competitionName", id
         FROM public.iterations 
@@ -67,23 +82,25 @@ if selected_season and selected_competition:
 
     if not df_details.empty:
         selected_iteration_id = df_details.iloc[0]['id']
-        # We tonen even klein bovenaan welke competitie actief is
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
         st.error("Kon geen ID vinden voor deze competitie.")
-        st.stop() # Stop de app als er geen ID is
+        st.stop() 
 else:
     st.warning("👈 Kies eerst een seizoen en competitie in het menu links.")
     st.stop() 
 
+# -----------------------------------------------------------------------------
+# 5. HOOFDSCHERM LOGICA
+# -----------------------------------------------------------------------------
 
-# --- 5. HOOFDSCHERM LOGICA ---
-
+# === MODUS: SPELERS ===
 if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
     
-    # --- A. SPELER FILTER OPHALEN ---
-    # LET OP: We gebruiken nu quotes rond "playerId" en "iterationId"
+    # --- A. SPELER NAAM FILTER OPHALEN ---
+    # We gebruiken quotes rond "playerId" en "iterationId" omdat Postgres streng is
+    # We gebruiken kleine letters voor commonname in public.players
     players_query = """
         SELECT DISTINCT p.commonname
         FROM public.players p
@@ -96,7 +113,7 @@ if analysis_mode == "Spelers":
         df_players = run_query(players_query, params=(selected_iteration_id,))
         player_names = df_players['commonname'].tolist()
         
-        # --- B. DE MULTISELECT ---
+        # De Multiselect box
         selected_players = st.multiselect("Zoek specifieke spelers:", player_names)
         
     except Exception as e:
@@ -105,10 +122,10 @@ if analysis_mode == "Spelers":
         st.code(e)
         st.stop()
 
-    # --- C. DATA TONEN OP BASIS VAN FILTER ---
+    # --- B. DATA TONEN ---
     st.divider()
     
-    # Basis query: ook hier quotes rond de analysis kolommen
+    # Basis query voor de tabel
     base_query = """
         SELECT 
             p.commonname as "Speler",
@@ -122,19 +139,19 @@ if analysis_mode == "Spelers":
         WHERE a."iterationId" = %s
     """
     
-    # Logica: Is er gefilterd?
+    # Logica: Filter toepassen of niet?
     if selected_players:
-        # We voegen een filter toe aan de SQL
+        # JA: Filter op de gekozen namen
         query = base_query + " AND p.commonname IN %s ORDER BY p.commonname"
         params = (selected_iteration_id, tuple(selected_players))
         st.write(f"Toont data voor: {', '.join(selected_players)}")
     else:
-        # Geen filter? Toon top 50
+        # NEE: Toon top 50
         query = base_query + " LIMIT 50"
         params = (selected_iteration_id,)
         st.info("💡 Tip: Gebruik de zoekbalk hierboven om specifieke spelers te vinden. Hieronder zie je de eerste 50.")
 
-    # Uitvoeren
+    # Uitvoeren en tonen
     try:
         df_scores = run_query(query, params=params)
         st.dataframe(df_scores, use_container_width=True)
@@ -142,5 +159,14 @@ if analysis_mode == "Spelers":
         st.error("Fout bij ophalen scores:")
         st.code(e)
 
+# === MODUS: TEAMS ===
 elif analysis_mode == "Teams":
-    # ... rest van de code blijft hetzelfde ...
+    st.header("🛡️ Team Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+    st.write("Hier tonen we later data uit `analysis.squad_final_scores`.")
+
+# === MODUS: COACHES ===
+elif analysis_mode == "Coaches":
+    st.header("👔 Coach Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+    st.write("Hier tonen we later data over de technische staf.")
