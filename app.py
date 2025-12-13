@@ -400,6 +400,131 @@ if analysis_mode == "Spelers":
         else: st.error("Geen data gevonden voor deze speler ID.")
     except Exception as e: st.error("Er ging iets mis bij het ophalen van de details:"); st.code(e)
 
+# ... (Bovenstaande code voor Scout Rapporten) ...
+
+            # =========================================================
+            # 7. VERGELIJKBARE SPELERS (SIMILARITY)
+            # =========================================================
+            st.markdown("---")
+            st.subheader("👯 Vergelijkbare Spelers")
+            
+            # We halen alleen de actieve profielen van de huidige speler op om op te vergelijken
+            # (Dus als het een spits is, vergelijken we niet op 'tackling')
+            compare_columns = [col for col, score in profile_mapping.items() if score is not None and score > 0]
+            
+            # Mapping van de leesbare namen terug naar database kolomnamen
+            # Dit is even nodig omdat profile_mapping de mooie namen gebruikt
+            reverse_mapping = {
+                "KVK Centrale Verdediger": 'cb_kvk_score', 
+                "KVK Wingback": 'wb_kvk_score',
+                "KVK Verdedigende Mid.": 'dm_kvk_score', 
+                "KVK Centrale Mid.": 'cm_kvk_score',
+                "KVK Aanvallende Mid.": 'acm_kvk_score', 
+                "KVK Flank Aanvaller": 'fa_kvk_score',
+                "KVK Spits": 'fw_kvk_score', 
+                "Voetballende CV": 'footballing_cb_kvk_score',
+                "Controlerende CV": 'controlling_cb_kvk_score', 
+                "Verdedigende Back": 'defensive_wb_kvk_score',
+                "Aanvallende Back": 'offensive_wingback_kvk_score', 
+                "Ballenafpakker (CVM)": 'ball_winning_dm_kvk_score',
+                "Spelmaker (CVM)": 'playmaker_dm_kvk_score', 
+                "Box-to-Box (CM)": 'box_to_box_cm_kvk_score',
+                "Diepgaande '10'": 'deep_running_acm_kvk_score', 
+                "Spelmakende '10'": 'playmaker_off_acm_kvk_score',
+                "Buitenspeler (Binnendoor)": 'fa_inside_kvk_score', 
+                "Buitenspeler (Buitenom)": 'fa_wide_kvk_score',
+                "Targetman": 'fw_target_kvk_score', 
+                "Lopende Spits": 'fw_running_kvk_score',
+                "Afmaker": 'fw_finisher_kvk_score'
+            }
+            
+            db_columns_to_compare = [reverse_mapping[c] for c in compare_columns if c in reverse_mapping]
+
+            if db_columns_to_compare:
+                with st.expander(f"Toon top 10 spelers die lijken op {selected_player_name}", expanded=False):
+                    
+                    st.caption(f"Vergelijking gebaseerd op positie '{row['position']}' en {len(db_columns_to_compare)} actieve profielen.")
+                    
+                    # 1. Haal data op van ALLE spelers met DEZELFDE positie uit ALLE seizoenen
+                    # We moeten dynamisch de kolommen opbouwen voor de query
+                    cols_string = ", ".join([f'a.{c}' for c in db_columns_to_compare])
+                    
+                    sim_query = f"""
+                        SELECT 
+                            p.id as "playerId", 
+                            p.commonname as "Naam", 
+                            sq.name as "Team", 
+                            i.season as "Seizoen",
+                            {cols_string}
+                        FROM analysis.final_impect_scores a
+                        JOIN public.players p ON a."playerId" = p.id
+                        LEFT JOIN public.squads sq ON a."squadId" = sq.id
+                        JOIN public.iterations i ON a."iterationId" = i.id
+                        WHERE a.position = %s
+                    """
+                    
+                    try:
+                        df_all_players = run_query(sim_query, params=(row['position'],))
+                        
+                        if not df_all_players.empty:
+                            # Zorg dat playerId uniek is per rij voor de berekening (combinatie ID + Seizoen is uniek)
+                            # We maken een unieke index
+                            df_all_players['unique_id'] = df_all_players['playerId'].astype(str) + "_" + df_all_players['Seizoen']
+                            df_calculation = df_all_players.set_index('unique_id')
+                            
+                            # De geselecteerde speler (Target)
+                            current_unique_id = f"{p_player_id}_{selected_season}"
+                            
+                            if current_unique_id in df_calculation.index:
+                                # We nemen de target vector (alleen de score kolommen)
+                                target_vector = df_calculation.loc[current_unique_id, db_columns_to_compare]
+                                
+                                # De rest van de data (alleen de score kolommen)
+                                others_vectors = df_calculation[db_columns_to_compare]
+                                
+                                # 2. Bereken verschil (Mean Absolute Difference)
+                                # Hoe lager het verschil, hoe hoger de gelijkenis
+                                diff = (others_vectors - target_vector).abs().mean(axis=1)
+                                similarity = 100 - diff
+                                
+                                # 3. Top 10 (jezelf uitsluiten)
+                                similarity = similarity.sort_values(ascending=False)
+                                similarity = similarity[similarity.index != current_unique_id]
+                                
+                                top_10_ids = similarity.head(10).index
+                                
+                                # 4. De data weer ophalen voor de tabel weergave
+                                results = df_calculation.loc[top_10_ids].copy()
+                                results['Gelijkenis %'] = similarity.loc[top_10_ids]
+                                
+                                # Mooie tabel maken
+                                display_cols = ['Naam', 'Team', 'Seizoen', 'Gelijkenis %']
+                                
+                                # Kleurfunctie (hergebruikt)
+                                def color_similarity(val):
+                                    color = '#2ecc71' if val > 90 else '#27ae60' if val > 80 else 'black'
+                                    weight = 'bold' if val > 80 else 'normal'
+                                    return f'color: {color}; font-weight: {weight}'
+
+                                st.dataframe(
+                                    results[display_cols]
+                                    .style.applymap(color_similarity, subset=['Gelijkenis %'])
+                                    .format({'Gelijkenis %': '{:.1f}%'}),
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+                                
+                            else:
+                                st.warning("Kon de huidige speler niet vinden in de vergelijkingsset.")
+                        else:
+                            st.info("Geen andere spelers gevonden met deze positie om mee te vergelijken.")
+                            
+                    except Exception as e:
+                        st.error("Fout bij berekenen similarity.")
+                        st.code(e)
+            else:
+                st.info("Deze speler heeft geen actieve profielscores om op te vergelijken.")
+
 # === MODUS: TEAMS ===
 elif analysis_mode == "Teams":
     st.header("🛡️ Team Analyse")
