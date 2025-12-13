@@ -511,10 +511,16 @@ elif analysis_mode == "Teams":
                     st.error("Fout bij ophalen team profielen.")
                     st.code(e)
                 
-                # --- NIEUW: 1. TEAM SCORES (Metrieken) - Uitklapbaar ---
+                # Styling functie voor Inverted cellen
+                def highlight_inverted(val):
+                    # Check of waarde 'True' is (als string of bool)
+                    if str(val).lower().strip() == 'true':
+                        return 'background-color: #e74c3c; color: white; font-weight: bold'
+                    return ''
+
+                # --- 1. TEAM SCORES (Metrieken) - Uitklapbaar ---
                 with st.expander("📊 Team Impect Scores (Metrieken)", expanded=False):
                     
-                    # Hier voegen we 'd.inverted' toe
                     score_team_query = """
                         SELECT 
                             d.name as "Metriek",
@@ -532,7 +538,10 @@ elif analysis_mode == "Teams":
                         
                         if not df_team_scores.empty:
                             st.dataframe(
-                                df_team_scores.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}),
+                                df_team_scores.style
+                                    .applymap(highlight_high_scores, subset=['Score'])
+                                    .applymap(highlight_inverted, subset=['Inverted'])
+                                    .format({'Score': '{:.1f}'}),
                                 use_container_width=True,
                                 hide_index=True
                             )
@@ -543,10 +552,9 @@ elif analysis_mode == "Teams":
                         st.code(e)
 
 
-                # --- NIEUW: 2. TEAM KPIs (Details) - Uitklapbaar ---
+                # --- 2. TEAM KPIs (Details) - Uitklapbaar ---
                 with st.expander("📉 Team Impect KPIs (Details)", expanded=False):
                     
-                    # Hier voegen we 'd.inverted' toe
                     kpi_query = """
                         SELECT 
                             d.name as "KPI",
@@ -563,7 +571,10 @@ elif analysis_mode == "Teams":
                         
                         if not df_kpis.empty:
                             st.dataframe(
-                                df_kpis.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}),
+                                df_kpis.style
+                                    .applymap(highlight_high_scores, subset=['Score'])
+                                    .applymap(highlight_inverted, subset=['Inverted'])
+                                    .format({'Score': '{:.1f}'}),
                                 use_container_width=True,
                                 hide_index=True
                             )
