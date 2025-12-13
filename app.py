@@ -165,7 +165,7 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
-        # DIT IS NU TEKST (STRING)
+        # ID is tekst
         selected_iteration_id = str(df_details.iloc[0]['id'])
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -223,7 +223,7 @@ if analysis_mode == "Spelers":
         st.code(e)
         st.stop()
 
-    # --- B. HOOFD PROFIELEN & BIO ---
+    # --- B. DATA OPHALEN ---
     st.divider()
     
     score_query = """
@@ -253,7 +253,7 @@ if analysis_mode == "Spelers":
         if not df_scores.empty:
             row = df_scores.iloc[0]
             
-            # 1. BIO
+            # BIO
             st.subheader(f"ℹ️ {selected_player_name}")
             col_bio1, col_bio2, col_bio3, col_bio4 = st.columns(4)
             with col_bio1: st.metric("Huidig Team", row['current_team_name'] if row['current_team_name'] else "Onbekend")
@@ -262,7 +262,7 @@ if analysis_mode == "Spelers":
             with col_bio4: st.metric("Voet", row['leg'] if row['leg'] else "-")
             st.markdown("---")
 
-            # 2. PROFIEL SCORE (Taart)
+            # PROFIELEN
             profile_mapping = {
                 "KVK Centrale Verdediger": row['cb_kvk_score'], "KVK Wingback": row['wb_kvk_score'],
                 "KVK Verdedigende Mid.": row['dm_kvk_score'], "KVK Centrale Mid.": row['cm_kvk_score'],
@@ -300,13 +300,9 @@ if analysis_mode == "Spelers":
                     fig.update_traces(textinfo='value', textfont_size=15, marker=dict(line=dict(color='#000000', width=1)))
                     st.plotly_chart(fig, use_container_width=True)
 
-
-            # =========================================================
-            # 3. SPECIFIEKE METRIEKEN (PIRAMIDE LAAG 2)
-            # =========================================================
+            # METRIEKEN
             st.markdown("---")
             st.subheader("📊 Impect Speler Scores")
-            
             metrics_config = get_config_for_position(row['position'], POSITION_METRICS)
             
             if metrics_config:
@@ -314,15 +310,10 @@ if analysis_mode == "Spelers":
                     if not metric_ids: return pd.DataFrame()
                     ids_tuple = tuple(str(x) for x in metric_ids)
                     m_query = """
-                        SELECT 
-                            d.name as "Metriek",
-                            d.details_label as "Detail", 
-                            s.final_score_1_to_100 as "Score"
+                        SELECT d.name as "Metriek", d.details_label as "Detail", s.final_score_1_to_100 as "Score"
                         FROM analysis.player_final_scores s
                         JOIN public.player_score_definitions d ON CAST(s.metric_id AS TEXT) = d.id
-                        WHERE s."iterationId" = %s
-                          AND s."playerId" = %s
-                          AND s.metric_id IN %s
+                        WHERE s."iterationId" = %s AND s."playerId" = %s AND s.metric_id IN %s
                         ORDER BY s.final_score_1_to_100 DESC
                     """
                     return run_query(m_query, params=(selected_iteration_id, p_player_id, ids_tuple))
@@ -342,13 +333,9 @@ if analysis_mode == "Spelers":
             else:
                 st.info(f"Geen metrieken gevonden voor positie: '{row['position']}'")
 
-
-            # =========================================================
-            # 4. IMPECT KPIS (PIRAMIDE LAAG 3)
-            # =========================================================
+            # KPIS
             st.markdown("---")
             st.subheader("📈 Impect Speler KPIs")
-            
             kpis_config = get_config_for_position(row['position'], POSITION_KPIS)
             
             if kpis_config:
@@ -356,15 +343,10 @@ if analysis_mode == "Spelers":
                     if not kpi_ids: return pd.DataFrame()
                     ids_tuple = tuple(str(x) for x in kpi_ids)
                     k_query = """
-                        SELECT 
-                            d.name as "KPI",
-                            d.context as "Context", 
-                            s.final_score_1_to_100 as "Score"
+                        SELECT d.name as "KPI", d.context as "Context", s.final_score_1_to_100 as "Score"
                         FROM analysis.kpis_final_scores s
                         JOIN analysis.kpi_definitions d ON CAST(s.metric_id AS TEXT) = d.id
-                        WHERE s."iterationId" = %s
-                          AND s."playerId" = %s
-                          AND s.metric_id IN %s
+                        WHERE s."iterationId" = %s AND s."playerId" = %s AND s.metric_id IN %s
                         ORDER BY s.final_score_1_to_100 DESC
                     """
                     return run_query(k_query, params=(selected_iteration_id, p_player_id, ids_tuple))
@@ -384,81 +366,95 @@ if analysis_mode == "Spelers":
             else:
                 st.info(f"Geen KPIs gevonden voor positie: '{row['position']}'")
 
-            # =========================================================
-            # 5. KWALITEITEN & WERKPUNTEN (PLACEHOLDER)
-            # =========================================================
-            st.markdown("---")
-            st.subheader("⚖️ Kwaliteiten & Werkpunten")
-            st.info("🚧 Hier komen de sterke en zwakke punten van de speler (gegenereerd of handmatig).")
-
-            # =========================================================
-            # 6. RAPPORTEN (GEWIJZIGD)
-            # =========================================================
+            # RAPPORTEN
             st.markdown("---")
             st.subheader("📑 Data Scout Rapporten")
-
             reports_query = """
-                SELECT 
-                    m."scheduledDate" as "Datum",
-                    sq_h.name as "Thuisploeg",
-                    sq_a.name as "Uitploeg",
-                    r.position as "Positie",
-                    r.label as "Verdict"
+                SELECT m."scheduledDate" as "Datum", sq_h.name as "Thuisploeg", sq_a.name as "Uitploeg", r.position as "Positie", r.label as "Verdict"
                 FROM analysis.scouting_reports r
                 JOIN public.matches m ON r."matchId" = m.id
                 LEFT JOIN public.squads sq_h ON m."homeSquadId" = sq_h.id
                 LEFT JOIN public.squads sq_a ON m."awaySquadId" = sq_a.id
-                WHERE r."iterationId" = %s
-                  AND r."playerId" = %s
-                  AND m.available = true
+                WHERE r."iterationId" = %s AND r."playerId" = %s AND m.available = true
                 ORDER BY m."scheduledDate" DESC
             """
-            
             try:
                 df_reports = run_query(reports_query, params=(selected_iteration_id, p_player_id))
-                
                 if not df_reports.empty:
-                    # Layout: 2 Kolommen (Tabel links, Chart rechts)
                     col_rep_table, col_rep_chart = st.columns([2, 1])
-                    
-                    with col_rep_table:
-                        st.dataframe(df_reports, use_container_width=True, hide_index=True)
-                        
+                    with col_rep_table: st.dataframe(df_reports, use_container_width=True, hide_index=True)
                     with col_rep_chart:
-                        # Pie chart van de Verdicts
                         verdict_counts = df_reports['Verdict'].value_counts().reset_index()
                         verdict_counts.columns = ['Verdict', 'Aantal']
-                        
-                        fig_verdict = px.pie(
-                            verdict_counts, 
-                            values='Aantal', 
-                            names='Verdict', 
-                            title='Verdeling Verdicts',
-                            hole=0.4,
-                            color_discrete_sequence=['#d71920', '#bdc3c7', '#ecf0f1', '#c0392b']
-                        )
+                        fig_verdict = px.pie(verdict_counts, values='Aantal', names='Verdict', title='Verdeling Verdicts', hole=0.4, color_discrete_sequence=['#d71920', '#bdc3c7', '#ecf0f1', '#c0392b'])
                         st.plotly_chart(fig_verdict, use_container_width=True)
-                else:
-                    st.info("Geen data rapporten gevonden voor deze speler.")
+                else: st.info("Geen data rapporten gevonden voor deze speler.")
             except Exception as e:
-                st.error("Kon rapporten niet laden.")
-                st.code(e)
+                st.error("Kon rapporten niet laden."); st.code(e)
             
-            # SCOUT RAPPORTEN NU HIERONDER
             st.markdown("---")
             st.subheader("👀 Scout Rapporten")
             st.warning("🚧 Nog geen fysieke scouting rapporten beschikbaar.")
 
-        else:
-            st.error("Geen data gevonden voor deze speler ID.")
+        else: st.error("Geen data gevonden voor deze speler ID.")
+    except Exception as e: st.error("Er ging iets mis bij het ophalen van de details:"); st.code(e)
 
-    except Exception as e:
-        st.error("Er ging iets mis bij het ophalen van de details:")
-        st.code(e)
-
+# === NIEUWE MODUS: TEAMS ===
 elif analysis_mode == "Teams":
     st.header("🛡️ Team Analyse")
-    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+    
+    # --- A. TEAM SELECTIE ---
+    st.sidebar.header("3. Team Selectie")
+    
+    # We halen teams op die data hebben in de team-score tabel voor dit seizoen
+    # Let op: s."squadId" en sq.id zijn nu beide TEKST, dus geen CAST nodig
+    teams_query = """
+        SELECT DISTINCT sq.name, sq.id as "squadId"
+        FROM public.squads sq
+        JOIN analysis.squad_final_scores s ON sq.id = s."squadId"
+        WHERE s."iterationId" = %s
+        ORDER BY sq.name;
+    """
+    
+    try:
+        df_teams = run_query(teams_query, params=(selected_iteration_id,))
+        
+        # 1. Lijst met namen voor de dropdown
+        team_names = df_teams['name'].tolist()
+        selected_team_name = st.sidebar.selectbox("Kies een team:", team_names)
+        
+        # 2. Checken op dubbele namen (zoals gevraagd)
+        candidate_rows = df_teams[df_teams['name'] == selected_team_name]
+        
+        final_squad_id = None
+        
+        if len(candidate_rows) > 1:
+            st.sidebar.warning(f"⚠️ Meerdere teams gevonden met naam '{selected_team_name}'.")
+            # We tonen het ID erbij om onderscheid te maken
+            squad_options = candidate_rows.apply(lambda x: f"{x['name']} (ID: {x['squadId']})", axis=1).tolist()
+            selected_option = st.sidebar.selectbox("Specifieer team:", squad_options)
+            
+            # Het ID uit de string halen (beetje hacky maar werkt voor dropdown)
+            # Of veiliger: we zoeken de row weer op
+            selected_id_str = selected_option.split("ID: ")[1].replace(")", "")
+            final_squad_id = selected_id_str
+            
+        elif len(candidate_rows) == 1:
+            final_squad_id = candidate_rows.iloc[0]['squadId']
+            
+        else:
+            st.error("Geen team gevonden.")
+            st.stop()
+            
+        st.info(f"Team ID geselecteerd: {final_squad_id}") # Debug / Bevestiging
+        
+        # Hier komt straks de rest van de Team logica...
+        st.write("🚧 Hier komt binnenkort de data uit `analysis.squad_final_scores`.")
+
+    except Exception as e:
+        st.error("Kon teamlijst niet ophalen. Check of analysis.squad_final_scores gevuld is.")
+        st.code(e)
+
 
 elif analysis_mode == "Coaches":
     st.header("👔 Coach Analyse")
