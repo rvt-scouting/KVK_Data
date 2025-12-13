@@ -9,7 +9,7 @@ import plotly.express as px
 st.set_page_config(page_title="KVK Scouting", page_icon="🔴", layout="wide")
 st.title("🔴⚪ KV Kortrijk - Data Scouting Platform")
 
-# --- MAPPING: SPELER SCORES (De "Metrieken") ---
+# --- MAPPING VAN POSITIES NAAR METRIC ID'S ---
 POSITION_METRICS = {
     "central_defender": {
         "aan_bal": [66, 58, 64, 10, 163],
@@ -41,7 +41,7 @@ POSITION_METRICS = {
     }
 }
 
-# --- MAPPING: SPELER KPIS (De "Onderliggende Data") ---
+# --- MAPPING: SPELER KPIS ---
 POSITION_KPIS = {
     "central_defender": {
         "aan_bal": [107, 106, 1534, 21, 2, 0, 1405, 1422],
@@ -73,7 +73,6 @@ POSITION_KPIS = {
     }
 }
 
-# Functie om de juiste config op te halen (Werkt voor zowel Metrics als KPIs)
 def get_config_for_position(db_position, config_dict):
     if not db_position:
         return None
@@ -345,7 +344,7 @@ if analysis_mode == "Spelers":
 
 
             # =========================================================
-            # 4. IMPECT KPIS (PIRAMIDE LAAG 3) - NIEUW
+            # 4. IMPECT KPIS (PIRAMIDE LAAG 3)
             # =========================================================
             st.markdown("---")
             st.subheader("📈 Impect Speler KPIs")
@@ -356,8 +355,6 @@ if analysis_mode == "Spelers":
                 def get_kpis_table(kpi_ids):
                     if not kpi_ids: return pd.DataFrame()
                     ids_tuple = tuple(str(x) for x in kpi_ids)
-                    
-                    # Query op basis van kpis_final_scores en kpi_definitions
                     k_query = """
                         SELECT 
                             d.name as "KPI",
@@ -386,6 +383,27 @@ if analysis_mode == "Spelers":
                     else: st.caption("Geen KPI data.")     
             else:
                 st.info(f"Geen KPIs gevonden voor positie: '{row['position']}'")
+
+            # =========================================================
+            # 5. KWALITEITEN & WERKPUNTEN (PLACEHOLDER)
+            # =========================================================
+            st.markdown("---")
+            st.subheader("⚖️ Kwaliteiten & Werkpunten")
+            st.info("🚧 Hier komen de sterke en zwakke punten van de speler (gegenereerd of handmatig).")
+
+            # =========================================================
+            # 6. RAPPORTEN (PLACEHOLDERS)
+            # =========================================================
+            st.markdown("---")
+            col_rep1, col_rep2 = st.columns(2)
+            
+            with col_rep1:
+                st.subheader("📑 Data Scout Rapporten")
+                st.warning("🚧 Nog geen data rapporten beschikbaar.")
+                
+            with col_rep2:
+                st.subheader("👀 Scout Rapporten")
+                st.warning("🚧 Nog geen fysieke scouting rapporten beschikbaar.")
 
 
         else:
