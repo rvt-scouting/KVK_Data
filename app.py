@@ -41,33 +41,25 @@ POSITION_METRICS = {
     }
 }
 
-# UPDATE: Strikte mapping op basis van jouw lijst
 def get_metrics_for_position(db_position):
     if not db_position:
         return None
-        
-    # We zetten alles naar HOOFDLETTERS en halen spaties weg voor de zekerheid
+    
     pos = str(db_position).upper().strip()
     
     if pos == "CENTRAL_DEFENDER":
         return POSITION_METRICS['central_defender']
-        
     elif pos in ["RIGHT_WINGBACK", "LEFT_WINGBACK"]:
         return POSITION_METRICS['wingback']
-        
-    elif pos == "DEFENSE_MIDFIELD":
+    elif pos in ["DEFENSIVE_MIDFIELD", "DEFENSE_MIDFIELD"]:
         return POSITION_METRICS['defensive_midfield']
-        
     elif pos == "CENTRAL_MIDFIELD":
         return POSITION_METRICS['central_midfield']
-        
-    elif pos == "ATTACKING_MIDFIELD": # Voor de zekerheid toegevoegd
+    elif pos in ["ATTACKING_MIDFIELD", "OFFENSIVE_MIDFIELD"]:
         return POSITION_METRICS['attacking_midfield']
-        
     elif pos in ["RIGHT_WINGER", "LEFT_WINGER"]:
         return POSITION_METRICS['winger']
-        
-    elif pos == "CENTER_FORWARD":
+    elif pos in ["CENTRAL_FORWARD", "STRIKER"]:
         return POSITION_METRICS['center_forward']
     
     return None
@@ -91,7 +83,6 @@ def run_query(query, params=None):
 # -----------------------------------------------------------------------------
 st.sidebar.header("1. Selecteer Data")
 
-# Seizoen
 season_query = "SELECT DISTINCT season FROM public.iterations ORDER BY season DESC;"
 try:
     df_seasons = run_query(season_query)
@@ -101,7 +92,6 @@ except Exception as e:
     st.error("Kon seizoenen niet laden.")
     st.stop()
 
-# Competitie
 if selected_season:
     competition_query = """
         SELECT DISTINCT "competitionName" 
@@ -157,7 +147,6 @@ else:
 if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
     
-    # --- A. SPELER SELECTIE ---
     st.sidebar.header("3. Speler Selectie")
     
     players_query = """
@@ -198,7 +187,6 @@ if analysis_mode == "Spelers":
         st.error("Fout bij ophalen spelerslijst.")
         st.stop()
 
-    # --- B. HOOFD PROFIELEN & BIO ---
     st.divider()
     
     score_query = """
@@ -229,7 +217,6 @@ if analysis_mode == "Spelers":
         if not df_scores.empty:
             row = df_scores.iloc[0]
             
-            # 1. BIO
             st.subheader(f"ℹ️ {selected_player_name}")
             col_bio1, col_bio2, col_bio3, col_bio4 = st.columns(4)
             with col_bio1: st.metric("Huidig Team", row['current_team_name'] if row['current_team_name'] else "Onbekend")
@@ -238,7 +225,6 @@ if analysis_mode == "Spelers":
             with col_bio4: st.metric("Voet", row['leg'] if row['leg'] else "-")
             st.markdown("---")
 
-            # 2. PROFIEL SCORE (Taart)
             profile_mapping = {
                 "KVK Centrale Verdediger": row['cb_kvk_score'], "KVK Wingback": row['wb_kvk_score'],
                 "KVK Verdedigende Mid.": row['dm_kvk_score'], "KVK Centrale Mid.": row['cm_kvk_score'],
@@ -276,11 +262,9 @@ if analysis_mode == "Spelers":
                     fig.update_traces(textinfo='value', textfont_size=15, marker=dict(line=dict(color='#000000', width=1)))
                     st.plotly_chart(fig, use_container_width=True)
 
-            # --- 3. SPECIFIEKE METRIEKEN (PIRAMIDE OMLAAG) ---
             st.markdown("---")
             st.subheader("📊 Specifieke Metrieken")
             
-            # Hier gebruiken we de nieuwe functie!
             metrics_config = get_metrics_for_position(row['position'])
             
             if metrics_config:
@@ -288,13 +272,15 @@ if analysis_mode == "Spelers":
                 def get_metrics_table(metric_ids):
                     if not metric_ids: return pd.DataFrame()
                     ids_tuple = tuple(metric_ids)
+                    
+                    # FIX: details_label (met underscore)
                     m_query = """
                         SELECT 
                             d.name as "Metriek",
-                            d."details label" as "Detail",
+                            d.details_label as "Detail", 
                             s.final_score_1_to_100 as "Score"
                         FROM analysis.player_final_scores s
-                        JOIN public.player_score_definitions d ON s.metric_id = d.id
+                        JOIN public.player_score_definitions d ON CAST(s.metric_id AS TEXT) = d.id
                         WHERE s."iterationId" = %s
                           AND CAST(s."playerId" AS TEXT) = %s
                           AND s.metric_id IN %s
@@ -320,7 +306,7 @@ if analysis_mode == "Spelers":
                     else: st.caption("Geen data.")
                         
             else:
-                st.info(f"Nog geen metriek-configuratie ingesteld voor positie: {row['position']}")
+                st.info(f"Geen metrieken gevonden voor positie: '{row['position']}'")
 
         else:
             st.error("Geen data gevonden voor deze speler ID.")
