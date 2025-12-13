@@ -83,32 +83,32 @@ if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
     
     # --- A. SPELER FILTER OPHALEN ---
-    # Gecorrigeerd: 'commonname' met kleine letters
+    # LET OP: We gebruiken nu quotes rond "playerId" en "iterationId"
     players_query = """
         SELECT DISTINCT p.commonname
         FROM public.players p
-        JOIN analysis.final_impect_scores s ON p.id = s.playerId
-        WHERE s.iterationId = %s
+        JOIN analysis.final_impect_scores s ON p.id = s."playerId"
+        WHERE s."iterationId" = %s
         ORDER BY p.commonname;
     """
     
     try:
         df_players = run_query(players_query, params=(selected_iteration_id,))
-        # Let op: Pandas kolomnaam wordt nu ook kleine letters
         player_names = df_players['commonname'].tolist()
         
         # --- B. DE MULTISELECT ---
         selected_players = st.multiselect("Zoek specifieke spelers:", player_names)
         
     except Exception as e:
-        st.error("Fout bij ophalen spelersnamen. Check of de kolom 'id' in public.players bestaat en koppelt aan 'playerId'.")
+        st.error("Fout bij ophalen spelersnamen.")
+        st.write("De database gaf deze foutmelding:")
         st.code(e)
         st.stop()
 
     # --- C. DATA TONEN OP BASIS VAN FILTER ---
     st.divider()
     
-    # Basis query: ook hier 'commonname' aangepast
+    # Basis query: ook hier quotes rond de analysis kolommen
     base_query = """
         SELECT 
             p.commonname as "Speler",
@@ -118,19 +118,18 @@ if analysis_mode == "Spelers":
             a.cm_kvk_score as "CM Score",
             a.fw_kvk_score as "SP Score"
         FROM analysis.final_impect_scores a
-        JOIN public.players p ON a.playerId = p.id
-        WHERE a.iterationId = %s
+        JOIN public.players p ON a."playerId" = p.id
+        WHERE a."iterationId" = %s
     """
     
     # Logica: Is er gefilterd?
     if selected_players:
-        # JA: We voegen een filter toe aan de SQL
-        # We gebruiken hier ook p.commonname
+        # We voegen een filter toe aan de SQL
         query = base_query + " AND p.commonname IN %s ORDER BY p.commonname"
         params = (selected_iteration_id, tuple(selected_players))
         st.write(f"Toont data voor: {', '.join(selected_players)}")
     else:
-        # NEE: Toon gewoon de top 50 als voorbeeld
+        # Geen filter? Toon top 50
         query = base_query + " LIMIT 50"
         params = (selected_iteration_id,)
         st.info("💡 Tip: Gebruik de zoekbalk hierboven om specifieke spelers te vinden. Hieronder zie je de eerste 50.")
@@ -142,3 +141,6 @@ if analysis_mode == "Spelers":
     except Exception as e:
         st.error("Fout bij ophalen scores:")
         st.code(e)
+
+elif analysis_mode == "Teams":
+    # ... rest van de code blijft hetzelfde ...
