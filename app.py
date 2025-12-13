@@ -10,7 +10,6 @@ st.set_page_config(page_title="KVK Scouting", page_icon="🔴", layout="wide")
 st.title("🔴⚪ KV Kortrijk - Data Scouting Platform")
 
 # --- MAPPING VAN POSITIES NAAR METRIC ID'S ---
-# Dit is de configuratie die jij hebt doorgegeven.
 POSITION_METRICS = {
     "central_defender": {
         "aan_bal": [66, 58, 64, 10, 163],
@@ -30,7 +29,7 @@ POSITION_METRICS = {
     },
     "attacking_midfield": {
         "aan_bal": [60, 61, 62, 73, 58, 2, 15, 52, 72, 10, 74, 9],
-        "zonder_bal": [] # Geen data opgegeven, laten we leeg
+        "zonder_bal": [] 
     },
     "winger": {
         "aan_bal": [60, 61, 62, 58, 54, 1, 53, 10, 9, 14, 6, 145],
@@ -42,18 +41,34 @@ POSITION_METRICS = {
     }
 }
 
-# Hulpfunctie om de juiste metrics te vinden op basis van de positie naam uit de database
+# UPDATE: Strikte mapping op basis van jouw lijst
 def get_metrics_for_position(db_position):
-    pos = db_position.lower().strip()
+    if not db_position:
+        return None
+        
+    # We zetten alles naar HOOFDLETTERS en halen spaties weg voor de zekerheid
+    pos = str(db_position).upper().strip()
     
-    # Logica om database namen te matchen aan onze config
-    if 'central_defender' in pos: return POSITION_METRICS['central_defender']
-    if 'wingback' in pos: return POSITION_METRICS['wingback']
-    if 'defensive_midfield' in pos: return POSITION_METRICS['defensive_midfield']
-    if 'central_midfield' in pos: return POSITION_METRICS['central_midfield']
-    if 'attacking_midfield' in pos: return POSITION_METRICS['attacking_midfield']
-    if 'winger' in pos: return POSITION_METRICS['winger']
-    if 'center_forward' in pos or 'striker' in pos: return POSITION_METRICS['center_forward']
+    if pos == "CENTRAL_DEFENDER":
+        return POSITION_METRICS['central_defender']
+        
+    elif pos in ["RIGHT_WINGBACK", "LEFT_WINGBACK"]:
+        return POSITION_METRICS['wingback']
+        
+    elif pos == "DEFENSIVE_MIDFIELD":
+        return POSITION_METRICS['defensive_midfield']
+        
+    elif pos == "CENTRAL_MIDFIELD":
+        return POSITION_METRICS['central_midfield']
+        
+    elif pos == "ATTACKING_MIDFIELD": # Voor de zekerheid toegevoegd
+        return POSITION_METRICS['attacking_midfield']
+        
+    elif pos in ["RIGHT_WINGER", "LEFT_WINGER"]:
+        return POSITION_METRICS['winger']
+        
+    elif pos == "CENTRAL_FORWARD":
+        return POSITION_METRICS['center_forward']
     
     return None
 
@@ -224,7 +239,6 @@ if analysis_mode == "Spelers":
             st.markdown("---")
 
             # 2. PROFIEL SCORE (Taart)
-            # ... (Mapping code zoals in vorige stap) ...
             profile_mapping = {
                 "KVK Centrale Verdediger": row['cb_kvk_score'], "KVK Wingback": row['wb_kvk_score'],
                 "KVK Verdedigende Mid.": row['dm_kvk_score'], "KVK Centrale Mid.": row['cm_kvk_score'],
@@ -266,19 +280,14 @@ if analysis_mode == "Spelers":
             st.markdown("---")
             st.subheader("📊 Specifieke Metrieken")
             
-            # Bepaal welke metrieken we moeten tonen op basis van positie
+            # Hier gebruiken we de nieuwe functie!
             metrics_config = get_metrics_for_position(row['position'])
             
             if metrics_config:
                 
-                # Functie om de query te bouwen en uit te voeren voor een lijst IDs
                 def get_metrics_table(metric_ids):
-                    if not metric_ids:
-                        return pd.DataFrame()
-                        
-                    # Tuple van IDs maken voor SQL IN clause
+                    if not metric_ids: return pd.DataFrame()
                     ids_tuple = tuple(metric_ids)
-                    
                     m_query = """
                         SELECT 
                             d.name as "Metriek",
@@ -293,37 +302,25 @@ if analysis_mode == "Spelers":
                     """
                     return run_query(m_query, params=(p_iter_id, p_player_id, ids_tuple))
 
-                # Data ophalen
                 df_aan_bal = get_metrics_table(metrics_config.get('aan_bal', []))
                 df_zonder_bal = get_metrics_table(metrics_config.get('zonder_bal', []))
                 
-                # Weergave in 2 kolommen
                 col_m1, col_m2 = st.columns(2)
                 
                 with col_m1:
                     st.write("⚽ **Aan de Bal**")
                     if not df_aan_bal.empty:
-                        st.dataframe(
-                            df_aan_bal.style.applymap(highlight_high_scores, subset=['Score']),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                    else:
-                        st.caption("Geen metrieken beschikbaar.")
+                        st.dataframe(df_aan_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    else: st.caption("Geen data.")
 
                 with col_m2:
                     st.write("🛡️ **Zonder Bal / Defensief**")
                     if not df_zonder_bal.empty:
-                        st.dataframe(
-                            df_zonder_bal.style.applymap(highlight_high_scores, subset=['Score']),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                    else:
-                        st.caption("Geen metrieken beschikbaar.")
+                        st.dataframe(df_zonder_bal.style.applymap(highlight_high_scores, subset=['Score']), use_container_width=True, hide_index=True)
+                    else: st.caption("Geen data.")
                         
             else:
-                st.info(f"Geen specifieke metriek-configuratie gevonden voor positie: {row['position']}")
+                st.info(f"Nog geen metriek-configuratie ingesteld voor positie: {row['position']}")
 
         else:
             st.error("Geen data gevonden voor deze speler ID.")
