@@ -55,7 +55,7 @@ def get_metrics_for_position(db_position):
     elif pos in ["RIGHT_WINGBACK", "LEFT_WINGBACK"]:
         return POSITION_METRICS['wingback']
         
-    elif pos == "DEFENSIVE_MIDFIELD":
+    elif pos == "DEFENSE_MIDFIELD":
         return POSITION_METRICS['defensive_midfield']
         
     elif pos == "CENTRAL_MIDFIELD":
