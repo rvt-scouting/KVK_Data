@@ -78,6 +78,7 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
+        # Dit is een string (text) uit public.iterations
         selected_iteration_id = df_details.iloc[0]['id']
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -97,46 +98,44 @@ if analysis_mode == "Spelers":
     # --- A. SPELER SELECTIE MET DUPLICAAT CHECK ---
     st.sidebar.header("3. Speler Selectie")
     
-    # UPDATE: We gebruiken CAST(s."squadId" AS TEXT) = sq.id
-    # Dit zorgt dat de integer s.squadId matcht met de text sq.id
+    # FIX: CAST(s."playerId" AS TEXT) om te matchen met p.id (text)
+    # FIX: CAST(s."squadId" AS TEXT) om te matchen met sq.id (text)
     players_query = """
         SELECT p.commonname, p.id as "playerId", sq.name as "squadName"
         FROM public.players p
-        JOIN analysis.final_impect_scores s ON p.id = s."playerId"
+        JOIN analysis.final_impect_scores s ON p.id = CAST(s."playerId" AS TEXT)
         LEFT JOIN public.squads sq ON CAST(s."squadId" AS TEXT) = sq.id
         WHERE s."iterationId" = %s
         ORDER BY p.commonname;
     """
     
     try:
-        df_players = run_query(players_query, params=(selected_iteration_id,))
+        # iterationId in analysis is integer, dus we moeten Python int() sturen
+        p_iter_id = int(selected_iteration_id)
+        
+        df_players = run_query(players_query, params=(p_iter_id,))
         
         # Stap 1: Unieke namen
         unique_names = df_players['commonname'].unique().tolist()
         selected_player_name = st.sidebar.selectbox("Kies een speler:", unique_names)
         
-        # Stap 2: Filteren op de gekozen naam om te zien of er dubbels zijn
+        # Stap 2: Filteren
         candidate_rows = df_players[df_players['commonname'] == selected_player_name]
         
         final_player_id = None
         
         if len(candidate_rows) > 1:
-            # ER ZIJN DUBBELS: Toon extra dropdown
             st.sidebar.warning(f"⚠️ Meerdere spelers gevonden: '{selected_player_name}'.")
             
-            # Maak een lijstje van teams, maar filter None eruit (voor spelers zonder team)
             squad_options = [s for s in candidate_rows['squadName'].tolist() if s is not None]
             
             if squad_options:
                 selected_squad = st.sidebar.selectbox("Kies team:", squad_options)
-                # Pak het ID op basis van naam EN team
                 final_player_id = candidate_rows[candidate_rows['squadName'] == selected_squad].iloc[0]['playerId']
             else:
-                # Fallback als er wel dubbels zijn maar geen teamnamen bekend
                 final_player_id = candidate_rows.iloc[0]['playerId']
             
         elif len(candidate_rows) == 1:
-            # GEEN DUBBELS
             final_player_id = candidate_rows.iloc[0]['playerId']
         else:
             st.error("Er ging iets mis met de selectie.")
@@ -150,6 +149,7 @@ if analysis_mode == "Spelers":
     # --- B. DATA OPHALEN OP BASIS VAN ID ---
     st.divider()
     
+    # FIX: CAST(a."playerId" AS TEXT) om te matchen met p.id
     score_query = """
         SELECT 
             p.commonname,
@@ -157,7 +157,7 @@ if analysis_mode == "Spelers":
             -- KVK Hoofdscores
             a.cb_kvk_score, a.wb_kvk_score, a.dm_kvk_score,
             a.cm_kvk_score, a.acm_kvk_score, a.fa_kvk_score, a.fw_kvk_score,
-            -- Specifieke Sub-profielen
+            -- Sub-profielen
             a.footballing_cb_kvk_score, a.controlling_cb_kvk_score,
             a.defensive_wb_kvk_score, a.offensive_wingback_kvk_score,
             a.ball_winning_dm_kvk_score, a.playmaker_dm_kvk_score,
@@ -166,18 +166,15 @@ if analysis_mode == "Spelers":
             a.fa_wide_kvk_score, a.fw_target_kvk_score,
             a.fw_running_kvk_score, a.fw_finisher_kvk_score
         FROM analysis.final_impect_scores a
-        JOIN public.players p ON a."playerId" = p.id
+        JOIN public.players p ON CAST(a."playerId" AS TEXT) = p.id
         WHERE a."iterationId" = %s AND a."playerId" = %s
     """
     
     try:
-        # Casten naar Python int om zeker te zijn
+        # Cast parameters naar pure integers voor de analysis tabel
         p_iter_id = int(selected_iteration_id)
-        # Zorg dat final_player_id bestaat en een int is
-        if final_player_id is not None:
-             p_player_id = int(final_player_id)
-        else:
-             st.stop()
+        # final_player_id komt als string uit de public tabel, dus casten naar int
+        p_player_id = int(final_player_id)
         
         df_scores = run_query(score_query, params=(p_iter_id, p_player_id))
         
