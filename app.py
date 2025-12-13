@@ -17,24 +17,19 @@ def init_connection():
     )
 
 def run_query(query, params=None):
-    # We gebruiken hier geen cache voor de kleine dropdown queries, 
-    # zodat ze altijd up-to-date en snappy zijn.
     conn = init_connection()
     return pd.read_sql(query, conn, params=params)
 
-# --- 2. SIDEBAR FILTERS ---
-st.sidebar.header("🔍 Filters")
+# --- 2. SIDEBAR FILTERS (CONTEXT) ---
+st.sidebar.header("1. Selecteer Data")
 
-# Stap A: Seizoen Selecteren
-# We halen alle unieke seizoenen op, gesorteerd van nieuw naar oud
+# Stap A: Seizoen
 season_query = "SELECT DISTINCT season FROM public.iterations ORDER BY season DESC;"
 df_seasons = run_query(season_query)
 seasons_list = df_seasons['season'].tolist()
+selected_season = st.sidebar.selectbox("Seizoen:", seasons_list)
 
-selected_season = st.sidebar.selectbox("Kies een Seizoen:", seasons_list)
-
-# Stap B: Competitie Selecteren (afhankelijk van seizoen)
-# We halen de competities op die bij het gekozen seizoen horen
+# Stap B: Competitie
 if selected_season:
     competition_query = """
         SELECT DISTINCT "competitionName" 
@@ -44,19 +39,26 @@ if selected_season:
     """
     df_competitions = run_query(competition_query, params=(selected_season,))
     competitions_list = df_competitions['competitionName'].tolist()
-    
-    selected_competition = st.sidebar.selectbox("Kies een Competitie:", competitions_list)
+    selected_competition = st.sidebar.selectbox("Competitie:", competitions_list)
 else:
     selected_competition = None
 
-# --- 3. HOOFDSCHERM: GESELECTEERDE DATA ---
+st.sidebar.divider() # Een lijntje
+
+# --- 3. SIDEBAR MODUS (DE SCHAKELAAR) ---
+st.sidebar.header("2. Analyse Niveau")
+# Hier maken we de keuze. We gebruiken 'radio' knoppen omdat je er maar 1 tegelijk mag kiezen.
+analysis_mode = st.sidebar.radio(
+    "Wat wil je analyseren?",
+    ["Spelers", "Teams", "Coaches"]
+)
+
+# --- 4. DATA OPHALEN (CONTEXT) ---
+selected_iteration_id = None
 
 if selected_season and selected_competition:
-    # We halen nu de specifieke rij op voor deze combinatie
-    # We pakken id, season, competitionName, competitionType, competitionCountryName
-    # Let op de dubbele quotes bij kolomnamen met hoofdletters in Postgres!
     details_query = """
-        SELECT season, "competitionName", "competitionType", "competitionCountryName", id
+        SELECT season, "competitionName", id
         FROM public.iterations 
         WHERE season = %s AND "competitionName" = %s
         LIMIT 1;
@@ -64,20 +66,34 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
-        # Het ID opslaan in een variabele voor later gebruik
         selected_iteration_id = df_details.iloc[0]['id']
-        
-        st.subheader("📋 Huidige Selectie")
-        # We tonen de tabel zoals gevraagd
-        st.dataframe(df_details, hide_index=True)
-        
-        # Even voor ons (ontwikkelaars) om te checken of het werkt:
-        st.info(f"💾 Systeem ID voor deze competitie: `{selected_iteration_id}`")
-        
-        st.divider() # Een lijntje voor de netheid
-        st.write("Vanaf hier gaan we straks de spelers tonen die horen bij ID:", selected_iteration_id)
-        
+        # We tonen even klein bovenaan welke competitie actief is
+        st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
-        st.warning("Geen details gevonden voor deze selectie.")
+        st.error("Kon geen ID vinden voor deze competitie.")
+        st.stop() # Stop de app als er geen ID is
 else:
-    st.info("👈 Begin door links een seizoen en competitie te kiezen.")
+    st.warning("👈 Kies eerst een seizoen en competitie in het menu links.")
+    st.stop() 
+
+
+# --- 5. HOOFDSCHERM LOGICA ---
+# Hier kijken we naar de stand van de schakelaar
+
+if analysis_mode == "Spelers":
+    st.header("🏃‍♂️ Speler Analyse")
+    st.write("Hier komen straks de tabellen en grafieken voor spelers.")
+    st.write(f"Data wordt opgehaald voor Iteration ID: `{selected_iteration_id}`")
+    
+    # TIJDELIJK: Even laten zien dat we klaar zijn voor de volgende stap
+    st.success("Module 'Spelers' is actief. We kunnen nu filters gaan bouwen.")
+
+elif analysis_mode == "Teams":
+    st.header("🛡️ Team Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+    st.write("Hier tonen we later data uit `analysis.squad_final_scores`.")
+
+elif analysis_mode == "Coaches":
+    st.header("👔 Coach Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+    st.write("Hier tonen we later data over de technische staf.")
