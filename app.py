@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import plotly.express as px
-import numpy as np 
+import numpy as np
 
 # -----------------------------------------------------------------------------
 # 1. CONFIGURATIE & SETUP
@@ -166,7 +166,6 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
-        # ID is tekst
         selected_iteration_id = str(df_details.iloc[0]['id'])
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -180,10 +179,13 @@ else:
 # 5. HOOFDSCHERM LOGICA
 # -----------------------------------------------------------------------------
 
+# =============================================================================
+# A. SPELERS MODUS
+# =============================================================================
 if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
     
-    # --- A. SPELER SELECTIE ---
+    # 1. SPELER SELECTIE
     st.sidebar.header("3. Speler Selectie")
     
     players_query = """
@@ -224,7 +226,7 @@ if analysis_mode == "Spelers":
         st.code(e)
         st.stop()
 
-    # --- B. DATA OPHALEN ---
+    # 2. DATA OPHALEN
     st.divider()
     
     score_query = """
@@ -254,7 +256,7 @@ if analysis_mode == "Spelers":
         if not df_scores.empty:
             row = df_scores.iloc[0]
             
-            # BIO
+            # BIO SECTIE
             st.subheader(f"ℹ️ {selected_player_name}")
             col_bio1, col_bio2, col_bio3, col_bio4 = st.columns(4)
             with col_bio1: st.metric("Huidig Team", row['current_team_name'] if row['current_team_name'] else "Onbekend")
@@ -263,31 +265,40 @@ if analysis_mode == "Spelers":
             with col_bio4: st.metric("Voet", row['leg'] if row['leg'] else "-")
             st.markdown("---")
 
-            # PROFIELEN
+            # PROFIEL SCORES
             profile_mapping = {
                 "KVK Centrale Verdediger": row['cb_kvk_score'], "KVK Wingback": row['wb_kvk_score'],
                 "KVK Verdedigende Mid.": row['dm_kvk_score'], "KVK Centrale Mid.": row['cm_kvk_score'],
                 "KVK Aanvallende Mid.": row['acm_kvk_score'], "KVK Flank Aanvaller": row['fa_kvk_score'],
-                "KVK Spits": row['fw_kvk_score'], "Voetballende CV": row['footballing_cb_kvk_score'],
-                "Controlerende CV": row['controlling_cb_kvk_score'], "Verdedigende Back": row['defensive_wb_kvk_score'],
-                "Aanvallende Back": row['offensive_wingback_kvk_score'], "Ballenafpakker (CVM)": row['ball_winning_dm_kvk_score'],
-                "Spelmaker (CVM)": row['playmaker_dm_kvk_score'], "Box-to-Box (CM)": row['box_to_box_cm_kvk_score'],
-                "Diepgaande '10'": row['deep_running_acm_kvk_score'], "Spelmakende '10'": row['playmaker_off_acm_kvk_score'],
-                "Buitenspeler (Binnendoor)": row['fa_inside_kvk_score'], "Buitenspeler (Buitenom)": row['fa_wide_kvk_score'],
-                "Targetman": row['fw_target_kvk_score'], "Lopende Spits": row['fw_running_kvk_score'],
+                "KVK Spits": row['fw_kvk_score'], 
+                "Voetballende CV": row['footballing_cb_kvk_score'],
+                "Controlerende CV": row['controlling_cb_kvk_score'], 
+                "Verdedigende Back": row['defensive_wb_kvk_score'],
+                "Aanvallende Back": row['offensive_wingback_kvk_score'], 
+                "Ballenafpakker (CVM)": row['ball_winning_dm_kvk_score'],
+                "Spelmaker (CVM)": row['playmaker_dm_kvk_score'], 
+                "Box-to-Box (CM)": row['box_to_box_cm_kvk_score'],
+                "Diepgaande '10'": row['deep_running_acm_kvk_score'], 
+                "Spelmakende '10'": row['playmaker_off_acm_kvk_score'],
+                "Buitenspeler (Binnendoor)": row['fa_inside_kvk_score'], 
+                "Buitenspeler (Buitenom)": row['fa_wide_kvk_score'],
+                "Targetman": row['fw_target_kvk_score'], 
+                "Lopende Spits": row['fw_running_kvk_score'],
                 "Afmaker": row['fw_finisher_kvk_score']
             }
             active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
             df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
             
+            # Highlight functie
+            def highlight_high_scores(val):
+                if isinstance(val, (int, float)) and val > 66: return 'color: #2ecc71; font-weight: bold'
+                return ''
+
+            # Top profiel bepalen
             top_profile_name = None
             if not df_chart.empty:
                 df_chart = df_chart.sort_values(by='Score', ascending=False)
                 if df_chart.iloc[0]['Score'] > 66: top_profile_name = df_chart.iloc[0]['Profiel']
-
-            def highlight_high_scores(val):
-                if isinstance(val, (int, float)) and val > 66: return 'color: #2ecc71; font-weight: bold'
-                return ''
 
             if top_profile_name: st.success(f"### ✅ Speler is POSITIEF op data profiel: {top_profile_name}")
             
@@ -301,7 +312,7 @@ if analysis_mode == "Spelers":
                     fig.update_traces(textinfo='value', textfont_size=15, marker=dict(line=dict(color='#000000', width=1)))
                     st.plotly_chart(fig, use_container_width=True)
 
-            # METRIEKEN
+            # METRIEKEN (PIRAMIDE LAAG 2)
             st.markdown("---")
             st.subheader("📊 Impect Speler Scores")
             metrics_config = get_config_for_position(row['position'], POSITION_METRICS)
@@ -334,7 +345,7 @@ if analysis_mode == "Spelers":
             else:
                 st.info(f"Geen metrieken gevonden voor positie: '{row['position']}'")
 
-            # KPIS
+            # KPIS (PIRAMIDE LAAG 3)
             st.markdown("---")
             st.subheader("📈 Impect Speler KPIs")
             kpis_config = get_config_for_position(row['position'], POSITION_KPIS)
@@ -367,7 +378,12 @@ if analysis_mode == "Spelers":
             else:
                 st.info(f"Geen KPIs gevonden voor positie: '{row['position']}'")
 
-            # RAPPORTEN
+            # PLACEHOLDERS
+            st.markdown("---")
+            st.subheader("⚖️ Kwaliteiten & Werkpunten")
+            st.info("🚧 Hier komen de sterke en zwakke punten van de speler (gegenereerd of handmatig).")
+
+            # DATA SCOUT RAPPORTEN
             st.markdown("---")
             st.subheader("📑 Data Scout Rapporten")
             reports_query = """
@@ -393,48 +409,29 @@ if analysis_mode == "Spelers":
             except Exception as e:
                 st.error("Kon rapporten niet laden."); st.code(e)
             
+            # SCOUT RAPPORTEN
             st.markdown("---")
             st.subheader("👀 Scout Rapporten")
             st.warning("🚧 Nog geen fysieke scouting rapporten beschikbaar.")
 
-        else: st.error("Geen data gevonden voor deze speler ID.")
-    except Exception as e: st.error("Er ging iets mis bij het ophalen van de details:"); st.code(e)
-
-# ... (Bovenstaande code voor Scout Rapporten) ...
-
-            # =========================================================
-            # 7. VERGELIJKBARE SPELERS (SIMILARITY)
-            # =========================================================
+            # VERGELIJKBARE SPELERS (SIMILARITY)
             st.markdown("---")
             st.subheader("👯 Vergelijkbare Spelers")
             
-            # We halen alleen de actieve profielen van de huidige speler op om op te vergelijken
-            # (Dus als het een spits is, vergelijken we niet op 'tackling')
             compare_columns = [col for col, score in profile_mapping.items() if score is not None and score > 0]
             
-            # Mapping van de leesbare namen terug naar database kolomnamen
-            # Dit is even nodig omdat profile_mapping de mooie namen gebruikt
+            # Mapping terug naar DB kolommen
             reverse_mapping = {
-                "KVK Centrale Verdediger": 'cb_kvk_score', 
-                "KVK Wingback": 'wb_kvk_score',
-                "KVK Verdedigende Mid.": 'dm_kvk_score', 
-                "KVK Centrale Mid.": 'cm_kvk_score',
-                "KVK Aanvallende Mid.": 'acm_kvk_score', 
-                "KVK Flank Aanvaller": 'fa_kvk_score',
-                "KVK Spits": 'fw_kvk_score', 
-                "Voetballende CV": 'footballing_cb_kvk_score',
-                "Controlerende CV": 'controlling_cb_kvk_score', 
-                "Verdedigende Back": 'defensive_wb_kvk_score',
-                "Aanvallende Back": 'offensive_wingback_kvk_score', 
-                "Ballenafpakker (CVM)": 'ball_winning_dm_kvk_score',
-                "Spelmaker (CVM)": 'playmaker_dm_kvk_score', 
-                "Box-to-Box (CM)": 'box_to_box_cm_kvk_score',
-                "Diepgaande '10'": 'deep_running_acm_kvk_score', 
-                "Spelmakende '10'": 'playmaker_off_acm_kvk_score',
-                "Buitenspeler (Binnendoor)": 'fa_inside_kvk_score', 
-                "Buitenspeler (Buitenom)": 'fa_wide_kvk_score',
-                "Targetman": 'fw_target_kvk_score', 
-                "Lopende Spits": 'fw_running_kvk_score',
+                "KVK Centrale Verdediger": 'cb_kvk_score', "KVK Wingback": 'wb_kvk_score',
+                "KVK Verdedigende Mid.": 'dm_kvk_score', "KVK Centrale Mid.": 'cm_kvk_score',
+                "KVK Aanvallende Mid.": 'acm_kvk_score', "KVK Flank Aanvaller": 'fa_kvk_score',
+                "KVK Spits": 'fw_kvk_score', "Voetballende CV": 'footballing_cb_kvk_score',
+                "Controlerende CV": 'controlling_cb_kvk_score', "Verdedigende Back": 'defensive_wb_kvk_score',
+                "Aanvallende Back": 'offensive_wingback_kvk_score', "Ballenafpakker (CVM)": 'ball_winning_dm_kvk_score',
+                "Spelmaker (CVM)": 'playmaker_dm_kvk_score', "Box-to-Box (CM)": 'box_to_box_cm_kvk_score',
+                "Diepgaande '10'": 'deep_running_acm_kvk_score', "Spelmakende '10'": 'playmaker_off_acm_kvk_score',
+                "Buitenspeler (Binnendoor)": 'fa_inside_kvk_score', "Buitenspeler (Buitenom)": 'fa_wide_kvk_score',
+                "Targetman": 'fw_target_kvk_score', "Lopende Spits": 'fw_running_kvk_score',
                 "Afmaker": 'fw_finisher_kvk_score'
             }
             
@@ -442,97 +439,65 @@ if analysis_mode == "Spelers":
 
             if db_columns_to_compare:
                 with st.expander(f"Toon top 10 spelers die lijken op {selected_player_name}", expanded=False):
-                    
                     st.caption(f"Vergelijking gebaseerd op positie '{row['position']}' en {len(db_columns_to_compare)} actieve profielen.")
                     
-                    # 1. Haal data op van ALLE spelers met DEZELFDE positie uit ALLE seizoenen
-                    # We moeten dynamisch de kolommen opbouwen voor de query
                     cols_string = ", ".join([f'a.{c}' for c in db_columns_to_compare])
-                    
                     sim_query = f"""
-                        SELECT 
-                            p.id as "playerId", 
-                            p.commonname as "Naam", 
-                            sq.name as "Team", 
-                            i.season as "Seizoen",
-                            {cols_string}
+                        SELECT p.id as "playerId", p.commonname as "Naam", sq.name as "Team", i.season as "Seizoen", {cols_string}
                         FROM analysis.final_impect_scores a
                         JOIN public.players p ON a."playerId" = p.id
                         LEFT JOIN public.squads sq ON a."squadId" = sq.id
                         JOIN public.iterations i ON a."iterationId" = i.id
                         WHERE a.position = %s
                     """
-                    
                     try:
                         df_all_players = run_query(sim_query, params=(row['position'],))
-                        
                         if not df_all_players.empty:
-                            # Zorg dat playerId uniek is per rij voor de berekening (combinatie ID + Seizoen is uniek)
-                            # We maken een unieke index
                             df_all_players['unique_id'] = df_all_players['playerId'].astype(str) + "_" + df_all_players['Seizoen']
                             df_calculation = df_all_players.set_index('unique_id')
                             
-                            # De geselecteerde speler (Target)
                             current_unique_id = f"{p_player_id}_{selected_season}"
                             
                             if current_unique_id in df_calculation.index:
-                                # We nemen de target vector (alleen de score kolommen)
                                 target_vector = df_calculation.loc[current_unique_id, db_columns_to_compare]
-                                
-                                # De rest van de data (alleen de score kolommen)
                                 others_vectors = df_calculation[db_columns_to_compare]
-                                
-                                # 2. Bereken verschil (Mean Absolute Difference)
-                                # Hoe lager het verschil, hoe hoger de gelijkenis
                                 diff = (others_vectors - target_vector).abs().mean(axis=1)
                                 similarity = 100 - diff
                                 
-                                # 3. Top 10 (jezelf uitsluiten)
                                 similarity = similarity.sort_values(ascending=False)
                                 similarity = similarity[similarity.index != current_unique_id]
-                                
                                 top_10_ids = similarity.head(10).index
                                 
-                                # 4. De data weer ophalen voor de tabel weergave
                                 results = df_calculation.loc[top_10_ids].copy()
                                 results['Gelijkenis %'] = similarity.loc[top_10_ids]
                                 
-                                # Mooie tabel maken
-                                display_cols = ['Naam', 'Team', 'Seizoen', 'Gelijkenis %']
-                                
-                                # Kleurfunctie (hergebruikt)
                                 def color_similarity(val):
                                     color = '#2ecc71' if val > 90 else '#27ae60' if val > 80 else 'black'
                                     weight = 'bold' if val > 80 else 'normal'
                                     return f'color: {color}; font-weight: {weight}'
 
                                 st.dataframe(
-                                    results[display_cols]
-                                    .style.applymap(color_similarity, subset=['Gelijkenis %'])
-                                    .format({'Gelijkenis %': '{:.1f}%'}),
-                                    use_container_width=True,
-                                    hide_index=True
+                                    results[['Naam', 'Team', 'Seizoen', 'Gelijkenis %']]
+                                    .style.applymap(color_similarity, subset=['Gelijkenis %']).format({'Gelijkenis %': '{:.1f}%'}),
+                                    use_container_width=True, hide_index=True
                                 )
-                                
-                            else:
-                                st.warning("Kon de huidige speler niet vinden in de vergelijkingsset.")
-                        else:
-                            st.info("Geen andere spelers gevonden met deze positie om mee te vergelijken.")
-                            
-                    except Exception as e:
-                        st.error("Fout bij berekenen similarity.")
-                        st.code(e)
-            else:
-                st.info("Deze speler heeft geen actieve profielscores om op te vergelijken.")
+                            else: st.warning("Kon de huidige speler niet vinden in de vergelijkingsset.")
+                        else: st.info("Geen andere spelers gevonden met deze positie.")
+                    except Exception as e: st.error("Fout bij berekenen similarity."); st.code(e)
+            else: st.info("Deze speler heeft geen actieve profielscores om op te vergelijken.")
 
-# === MODUS: TEAMS ===
+        else: st.error("Geen data gevonden voor deze speler ID.")
+    except Exception as e: st.error("Er ging iets mis bij het ophalen van de details:"); st.code(e)
+
+# =============================================================================
+# B. TEAMS MODUS
+# =============================================================================
 elif analysis_mode == "Teams":
     st.header("🛡️ Team Analyse")
     
-    # --- A. TEAM SELECTIE ---
+    # 1. TEAM SELECTIE
     st.sidebar.header("3. Team Selectie")
     
-    # We halen teams op die data hebben
     teams_query = """
         SELECT DISTINCT sq.name, sq.id as "squadId"
         FROM public.squads sq
@@ -543,30 +508,22 @@ elif analysis_mode == "Teams":
     
     try:
         df_teams = run_query(teams_query, params=(selected_iteration_id,))
-        
         team_names = df_teams['name'].tolist()
         selected_team_name = st.sidebar.selectbox("Kies een team:", team_names)
         
         candidate_rows = df_teams[df_teams['name'] == selected_team_name]
-        
         final_squad_id = None
         
         if len(candidate_rows) > 1:
             st.sidebar.warning(f"⚠️ Meerdere teams gevonden met naam '{selected_team_name}'.")
             squad_options = candidate_rows.apply(lambda x: f"{x['name']} (ID: {x['squadId']})", axis=1).tolist()
             selected_option = st.sidebar.selectbox("Specifieer team:", squad_options)
-            
-            selected_id_str = selected_option.split("ID: ")[1].replace(")", "")
-            final_squad_id = selected_id_str
-            
+            final_squad_id = selected_option.split("ID: ")[1].replace(")", "")
         elif len(candidate_rows) == 1:
             final_squad_id = candidate_rows.iloc[0]['squadId']
+        else: st.error("Geen team gevonden."); st.stop()
             
-        else:
-            st.error("Geen team gevonden.")
-            st.stop()
-            
-        # --- B. HOOFDSCHERM TEAM ---
+        # 2. TEAM DASHBOARD
         if final_squad_id:
             st.divider()
             
@@ -579,204 +536,112 @@ elif analysis_mode == "Teams":
             
             if not df_team_details.empty:
                 team_row = df_team_details.iloc[0]
-                team_name_display = team_row['name']
-                team_logo_url = team_row['imageUrl']
-                
-                # Layout met logo
                 col_logo, col_name = st.columns([1, 5])
-                
                 with col_logo:
-                    if team_logo_url:
-                        st.image(team_logo_url, width=100)
-                
-                with col_name:
-                    st.header(f"🛡️ {team_name_display}")
+                    if team_row['imageUrl']: st.image(team_row['imageUrl'], width=100)
+                with col_name: st.header(f"🛡️ {team_row['name']}")
                     
-                # --- TEAM PROFIELEN ---
-                st.divider()
-                st.subheader("📊 Team Profiel Scores")
-                
+                # PROFIELEN
+                st.divider(); st.subheader("📊 Team Profiel Scores")
                 squad_profile_query = """
                     SELECT profile_name as "Profiel", score as "Score"
                     FROM analysis.squad_profile_scores
                     WHERE "squadId" = %s AND "iterationId" = %s
                     ORDER BY score DESC;
                 """
-                
                 try:
                     df_profiles = run_query(squad_profile_query, params=(final_squad_id, selected_iteration_id))
-                    
                     if not df_profiles.empty:
-                        col_prof_table, col_prof_chart = st.columns([1, 2])
-                        
+                        c1, c2 = st.columns([1, 2])
                         def highlight_high_scores(val):
                             if isinstance(val, (int, float)) and val > 66: return 'color: #2ecc71; font-weight: bold'
                             return ''
-
-                        with col_prof_table:
-                            st.dataframe(
-                                df_profiles.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}),
-                                use_container_width=True,
-                                hide_index=True
-                            )
-                            
-                        with col_prof_chart:
-                            fig_profiles = px.bar(
-                                df_profiles, 
-                                x='Profiel', 
-                                y='Score',
-                                title="Score per Profiel",
-                                color_discrete_sequence=['#d71920']
-                            )
-                            st.plotly_chart(fig_profiles, use_container_width=True)
-                            
-                    else:
-                        st.info("Geen profielscores gevonden voor dit team.")
-                        
-                except Exception as e:
-                    st.error("Fout bij ophalen team profielen.")
-                    st.code(e)
+                        with c1: st.dataframe(df_profiles.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}), use_container_width=True, hide_index=True)
+                        with c2: 
+                            fig = px.bar(df_profiles, x='Profiel', y='Score', title="Score per Profiel", color_discrete_sequence=['#d71920'])
+                            st.plotly_chart(fig, use_container_width=True)
+                    else: st.info("Geen profielscores gevonden.")
+                except Exception as e: st.error("Fout bij ophalen profielen."); st.code(e)
                 
-                # Styling functie voor Inverted cellen
+                # Styling functie Inverted
                 def highlight_inverted(val):
-                    if str(val).lower().strip() == 'true':
-                        return 'background-color: #e74c3c; color: white; font-weight: bold'
+                    if str(val).lower().strip() == 'true': return 'background-color: #e74c3c; color: white; font-weight: bold'
                     return ''
 
-                # --- 1. TEAM SCORES (Metrieken) - Uitklapbaar ---
+                # METRIEKEN (Uitklapbaar)
                 with st.expander("📊 Team Impect Scores (Metrieken)", expanded=False):
-                    
                     score_team_query = """
-                        SELECT 
-                            d.name as "Metriek",
-                            d.details_label as "Detail",
-                            d.inverted as "Inverted",
-                            s.final_score_1_to_100 as "Score"
+                        SELECT d.name as "Metriek", d.details_label as "Detail", d.inverted as "Inverted", s.final_score_1_to_100 as "Score"
                         FROM analysis.squad_final_scores s
                         JOIN public.squad_score_definitions d ON d.id = REPLACE(s.metric_id, 's', '')
                         WHERE s."squadId" = %s AND s."iterationId" = %s
                         ORDER BY s.final_score_1_to_100 DESC
                     """
-                    
                     try:
-                        df_team_scores = run_query(score_team_query, params=(final_squad_id, selected_iteration_id))
-                        
-                        if not df_team_scores.empty:
-                            st.dataframe(
-                                df_team_scores.style
-                                    .applymap(highlight_high_scores, subset=['Score'])
-                                    .applymap(highlight_inverted, subset=['Inverted'])
-                                    .format({'Score': '{:.1f}'}),
-                                use_container_width=True,
-                                hide_index=True
-                            )
-                        else:
-                            st.info("Geen team metrieken gevonden.")
-                    except Exception as e:
-                        st.error("Fout bij ophalen team scores.")
-                        st.code(e)
+                        df_tm = run_query(score_team_query, params=(final_squad_id, selected_iteration_id))
+                        if not df_tm.empty:
+                            st.dataframe(df_tm.style.applymap(highlight_high_scores, subset=['Score']).applymap(highlight_inverted, subset=['Inverted']).format({'Score': '{:.1f}'}), use_container_width=True, hide_index=True)
+                        else: st.info("Geen metrieken gevonden.")
+                    except Exception as e: st.error("Fout bij ophalen scores."); st.code(e)
 
-
-                # --- 2. TEAM KPIs (Details) - Uitklapbaar ---
+                # KPIs (Uitklapbaar)
                 with st.expander("📉 Team Impect KPIs (Details)", expanded=False):
-                    
-                    # FIX: Geen d.inverted in SELECT
                     kpi_query = """
-                        SELECT 
-                            d.name as "KPI",
-                            s.final_score_1_to_100 as "Score"
+                        SELECT d.name as "KPI", s.final_score_1_to_100 as "Score"
                         FROM analysis.squadkpi_final_scores s
                         JOIN analysis.kpi_definitions d ON d.id = REPLACE(s.metric_id, 'k', '')
                         WHERE s."squadId" = %s AND s."iterationId" = %s
                         ORDER BY s.final_score_1_to_100 DESC
                     """
-                    
                     try:
                         df_kpis = run_query(kpi_query, params=(final_squad_id, selected_iteration_id))
-                        
                         if not df_kpis.empty:
-                            # FIX: Geen highlight_inverted in style
-                            st.dataframe(
-                                df_kpis.style
-                                    .applymap(highlight_high_scores, subset=['Score'])
-                                    .format({'Score': '{:.1f}'}),
-                                use_container_width=True,
-                                hide_index=True
-                            )
-                        else:
-                            st.info("Geen KPI data gevonden.")
-                            
-                    except Exception as e:
-                        st.error("Fout bij ophalen Team KPIs")
-                        st.code(e)
+                            st.dataframe(df_kpis.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}), use_container_width=True, hide_index=True)
+                        else: st.info("Geen KPI data gevonden.")
+                    except Exception as e: st.error("Fout bij ophalen KPIs"); st.code(e)
 
-                # --- 3. VERGELIJKBARE TEAMS (SIMILARITY) ---
+                # VERGELIJKBARE TEAMS
                 st.markdown("---")
                 st.subheader("🤝 Vergelijkbare Teams")
-                st.caption("Gebaseerd op de 4 profielscores over alle seizoenen.")
-
+                
                 all_profiles_query = """
                     SELECT s."squadId", sq.name as "Team", i.season as "Seizoen", s.profile_name, s.score
                     FROM analysis.squad_profile_scores s
                     JOIN public.squads sq ON s."squadId" = sq.id
                     JOIN public.iterations i ON s."iterationId" = i.id
                 """
-                
                 try:
-                    df_all_profiles = run_query(all_profiles_query)
-                    
-                    if not df_all_profiles.empty:
-                        df_pivot = df_all_profiles.pivot_table(
-                            index=['squadId', 'Team', 'Seizoen'], 
-                            columns='profile_name', 
-                            values='score'
-                        ).fillna(0)
+                    df_all = run_query(all_profiles_query)
+                    if not df_all.empty:
+                        df_pivot = df_all.pivot_table(index=['squadId', 'Team', 'Seizoen'], columns='profile_name', values='score').fillna(0)
                         
-                        current_season_name = selected_season
+                        aantal_profielen = len(df_pivot.columns)
+                        st.caption(f"Gebaseerd op alle {aantal_profielen} profielscores over alle seizoenen.")
                         
-                        if (final_squad_id, team_name_display, current_season_name) in df_pivot.index:
-                            target_vector = df_pivot.loc[(final_squad_id, team_name_display, current_season_name)]
-                            diff = (df_pivot - target_vector).abs().mean(axis=1)
-                            similarity = 100 - diff
+                        current_season = selected_season
+                        
+                        if (final_squad_id, team_row['name'], current_season) in df_pivot.index:
+                            target = df_pivot.loc[(final_squad_id, team_row['name'], current_season)]
+                            diff = (df_pivot - target).abs().mean(axis=1)
+                            sim = 100 - diff
+                            sim = sim.sort_values(ascending=False)
+                            sim = sim[sim.index != (final_squad_id, team_row['name'], current_season)]
                             
-                            similarity = similarity.sort_values(ascending=False)
-                            similarity = similarity[similarity.index != (final_squad_id, team_name_display, current_season_name)]
-                            
-                            top_5 = similarity.head(5).reset_index()
+                            top_5 = sim.head(5).reset_index()
                             top_5.columns = ['ID', 'Team', 'Seizoen', 'Gelijkenis %']
                             
-                            # FIX: Kleurfunctie zonder Matplotlib
-                            def color_similarity(val):
-                                # Donkergroen > 90, Lichtgroen > 80, anders standaard
+                            def color_sim(val):
                                 color = '#2ecc71' if val > 90 else '#27ae60' if val > 80 else 'black'
                                 weight = 'bold' if val > 80 else 'normal'
                                 return f'color: {color}; font-weight: {weight}'
 
-                            st.dataframe(
-                                top_5[['Team', 'Seizoen', 'Gelijkenis %']]
-                                .style.applymap(color_similarity, subset=['Gelijkenis %'])
-                                .format({'Gelijkenis %': '{:.1f}%'}),
-                                use_container_width=True,
-                                hide_index=True
-                            )
-                            
-                        else:
-                            st.warning("Kon de vector voor dit team niet vinden in de dataset voor vergelijking.")
-                            
-                    else:
-                        st.error("Kon geen referentiedata ophalen voor vergelijking.")
-
-                except Exception as e:
-                    st.error("Fout bij berekenen vergelijkbare teams.")
-                    st.code(e)
+                            st.dataframe(top_5[['Team', 'Seizoen', 'Gelijkenis %']].style.applymap(color_sim, subset=['Gelijkenis %']).format({'Gelijkenis %': '{:.1f}%'}), use_container_width=True, hide_index=True)
+                        else: st.warning("Kon dit team niet vinden in de dataset.")
+                    else: st.error("Kon geen referentiedata ophalen.")
+                except Exception as e: st.error("Fout bij berekenen similarity."); st.code(e)
                 
-            else:
-                st.error("Kon team details niet ophalen.")
-
-    except Exception as e:
-        st.error("Kon teamlijst niet ophalen.")
-        st.code(e)
-
+            else: st.error("Kon team details niet ophalen.")
+    except Exception as e: st.error("Kon teamlijst niet ophalen."); st.code(e)
 
 elif analysis_mode == "Coaches":
     st.header("👔 Coach Analyse")
