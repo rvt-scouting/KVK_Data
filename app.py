@@ -78,7 +78,6 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
-        # Dit is een string (text) uit public.iterations
         selected_iteration_id = df_details.iloc[0]['id']
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -98,6 +97,7 @@ if analysis_mode == "Spelers":
     # --- A. SPELER SELECTIE MET DUPLICAAT CHECK ---
     st.sidebar.header("3. Speler Selectie")
     
+    # Query voor dropdown vullen
     players_query = """
         SELECT p.commonname, p.id as "playerId", sq.name as "squadName"
         FROM public.players p
@@ -108,9 +108,7 @@ if analysis_mode == "Spelers":
     """
     
     try:
-        # iterationId in analysis is integer, dus we moeten Python int() sturen
         p_iter_id = int(selected_iteration_id)
-        
         df_players = run_query(players_query, params=(p_iter_id,))
         
         # Stap 1: Unieke namen
@@ -124,7 +122,6 @@ if analysis_mode == "Spelers":
         
         if len(candidate_rows) > 1:
             st.sidebar.warning(f"⚠️ Meerdere spelers gevonden: '{selected_player_name}'.")
-            
             squad_options = [s for s in candidate_rows['squadName'].tolist() if s is not None]
             
             if squad_options:
@@ -147,12 +144,17 @@ if analysis_mode == "Spelers":
     # --- B. DATA OPHALEN OP BASIS VAN ID ---
     st.divider()
     
-    # BELANGRIJKE WIJZIGING: 
-    # We filteren op p.id (TEXT) in plaats van a.playerId. Dit voorkomt type conflicten.
+    # UPDATE: We halen nu ook BIO data op + Huidig Team
+    # We joinen public.squads (alias sq_curr) op basis van p.currentSquadId
     score_query = """
         SELECT 
             p.commonname,
             a.position,
+            p.birthdate,
+            p.birthplace,
+            p.leg,
+            sq_curr.name as "current_team_name",
+            
             -- KVK Hoofdscores
             a.cb_kvk_score, a.wb_kvk_score, a.dm_kvk_score,
             a.cm_kvk_score, a.acm_kvk_score, a.fa_kvk_score, a.fw_kvk_score,
@@ -166,14 +168,12 @@ if analysis_mode == "Spelers":
             a.fw_running_kvk_score, a.fw_finisher_kvk_score
         FROM analysis.final_impect_scores a
         JOIN public.players p ON CAST(a."playerId" AS TEXT) = p.id
+        LEFT JOIN public.squads sq_curr ON p."currentSquadId" = sq_curr.id
         WHERE a."iterationId" = %s AND p.id = %s
     """
     
     try:
-        # p_iter_id moet INT zijn (want iterationId in analysis is int)
         p_iter_id = int(selected_iteration_id)
-        
-        # p_player_id laten we als TEKST (string), want we filteren op p.id (tekst)
         p_player_id = str(final_player_id)
         
         df_scores = run_query(score_query, params=(p_iter_id, p_player_id))
@@ -181,9 +181,34 @@ if analysis_mode == "Spelers":
         if not df_scores.empty:
             row = df_scores.iloc[0]
             
+            # --- NIEUW: BIO DATA WEERGEVEN ---
+            st.subheader(f"ℹ️ {selected_player_name}")
+            
+            # We gebruiken st.columns voor een mooie rij met info
+            col_bio1, col_bio2, col_bio3, col_bio4 = st.columns(4)
+            
+            with col_bio1:
+                st.metric("Huidig Team", row['current_team_name'] if row['current_team_name'] else "Onbekend")
+            with col_bio2:
+                # Datum netjes formatteren als tekst, of 'Onbekend' als leeg
+                dob = str(row['birthdate']) if row['birthdate'] else "Onbekend"
+                st.metric("Geboortedatum", dob)
+            with col_bio3:
+                st.metric("Geboorteplaats", row['birthplace'] if row['birthplace'] else "-")
+            with col_bio4:
+                # Voet checken
+                foot = row['leg']
+                if foot == 'right': foot = 'Rechts'
+                elif foot == 'left': foot = 'Links'
+                elif foot == 'both': foot = 'Tweebenig'
+                st.metric("Voet", foot if foot else "-")
+            
+            st.markdown("---") # Een lijntje
+
+            # --- VERDER MET DE PROFIELEN ---
+            
             # COMPLETE Mapping
             profile_mapping = {
-                # --- KVK HOOFDSCORES ---
                 "KVK Centrale Verdediger": row['cb_kvk_score'],
                 "KVK Wingback": row['wb_kvk_score'],
                 "KVK Verdedigende Mid.": row['dm_kvk_score'],
@@ -192,7 +217,6 @@ if analysis_mode == "Spelers":
                 "KVK Flank Aanvaller": row['fa_kvk_score'],
                 "KVK Spits": row['fw_kvk_score'],
                 
-                # --- SUB PROFIELEN ---
                 "Voetballende CV": row['footballing_cb_kvk_score'],
                 "Controlerende CV": row['controlling_cb_kvk_score'],
                 "Verdedigende Back": row['defensive_wb_kvk_score'],
@@ -212,7 +236,7 @@ if analysis_mode == "Spelers":
             active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
             df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
             
-            # --- C. BEREKENINGEN ---
+            # Top Profiel Check
             top_profile_name = None
             if not df_chart.empty:
                 df_chart = df_chart.sort_values(by='Score', ascending=False)
@@ -225,18 +249,14 @@ if analysis_mode == "Spelers":
                     return 'color: #2ecc71; font-weight: bold'
                 return ''
 
-            # --- D. WEERGAVE ---
+            # Visualisatie
             if top_profile_name:
                 st.success(f"### ✅ Speler is POSITIEF op data profiel: {top_profile_name}")
             
             col1, col2 = st.columns([1, 2])
             
             with col1:
-                st.subheader(f"{selected_player_name}")
                 st.write(f"**Positie:** {row['position']}")
-                if len(candidate_rows) > 1:
-                     st.caption(f"Team: {selected_squad if 'selected_squad' in locals() else 'Onbekend'}")
-
                 st.write("Score per profiel:")
                 st.dataframe(
                     df_chart.style.applymap(highlight_high_scores, subset=['Score'])
