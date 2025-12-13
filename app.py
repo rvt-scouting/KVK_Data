@@ -78,22 +78,78 @@ else:
 
 
 # --- 5. HOOFDSCHERM LOGICA ---
-# Hier kijken we naar de stand van de schakelaar
 
 if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
-    st.write("Hier komen straks de tabellen en grafieken voor spelers.")
-    st.write(f"Data wordt opgehaald voor Iteration ID: `{selected_iteration_id}`")
     
-    # TIJDELIJK: Even laten zien dat we klaar zijn voor de volgende stap
-    st.success("Module 'Spelers' is actief. We kunnen nu filters gaan bouwen.")
+    # --- A. SPELER FILTER OPHALEN ---
+    # We halen alleen namen op van spelers die scores hebben in DEZE competitie (iterationId)
+    # We joinen analysis.final_impect_scores met public.players om de naam te krijgen
+    # Let op: check in je CSV of 'commonname' (kleine letters) of 'commonName' (hoofdletters) correct is.
+    # Postgres is hoofdlettergevoelig bij namen tussen dubbele quotes.
+    
+    players_query = """
+        SELECT DISTINCT p."commonName"
+        FROM public.players p
+        JOIN analysis.final_impect_scores s ON p.id = s.playerId
+        WHERE s.iterationId = %s
+        ORDER BY p."commonName";
+    """
+    
+    try:
+        df_players = run_query(players_query, params=(selected_iteration_id,))
+        player_names = df_players['commonName'].tolist()
+        
+        # --- B. DE MULTISELECT ---
+        # Hiermee kan de gebruiker typen en zoeken
+        selected_players = st.multiselect("Zoek specifieke spelers:", player_names)
+        
+    except Exception as e:
+        st.error("Kon spelersnamen niet ophalen. Check kolomnaam 'commonName' in public.players.")
+        st.stop()
+
+    # --- C. DATA TONEN OP BASIS VAN FILTER ---
+    st.divider()
+    
+    # Basis query
+    base_query = """
+        SELECT 
+            p."commonName" as "Speler",
+            a.position as "Positie",
+            a.cb_kvk_score as "CV Score",
+            a.dm_kvk_score as "CVM Score",
+            a.cm_kvk_score as "CM Score",
+            a.fw_kvk_score as "SP Score"
+        FROM analysis.final_impect_scores a
+        JOIN public.players p ON a.playerId = p.id
+        WHERE a.iterationId = %s
+    """
+    
+    # Logica: Is er gefilterd?
+    if selected_players:
+        # JA: We voegen een filter toe aan de SQL
+        # We moeten de lijst namen omzetten naar een formaat dat SQL snapt (tuple)
+        query = base_query + ' AND p."commonName" IN %s ORDER BY "Speler"'
+        params = (selected_iteration_id, tuple(selected_players))
+        st.write(f"Toont data voor: {', '.join(selected_players)}")
+    else:
+        # NEE: Toon gewoon de top 50 als voorbeeld
+        query = base_query + " LIMIT 50"
+        params = (selected_iteration_id,)
+        st.info("💡 Tip: Gebruik de zoekbalk hierboven om specifieke spelers te vinden. Hieronder zie je de eerste 50.")
+
+    # Uitvoeren
+    try:
+        df_scores = run_query(query, params=params)
+        st.dataframe(df_scores, use_container_width=True)
+    except Exception as e:
+        st.error("Fout bij ophalen scores:")
+        st.code(e)
 
 elif analysis_mode == "Teams":
     st.header("🛡️ Team Analyse")
     st.warning("🚧 Aan deze module wordt nog gewerkt.")
-    st.write("Hier tonen we later data uit `analysis.squad_final_scores`.")
 
 elif analysis_mode == "Coaches":
     st.header("👔 Coach Analyse")
     st.warning("🚧 Aan deze module wordt nog gewerkt.")
-    st.write("Hier tonen we later data over de technische staf.")
