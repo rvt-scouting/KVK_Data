@@ -399,15 +399,14 @@ if analysis_mode == "Spelers":
         else: st.error("Geen data gevonden voor deze speler ID.")
     except Exception as e: st.error("Er ging iets mis bij het ophalen van de details:"); st.code(e)
 
-# === NIEUWE MODUS: TEAMS ===
+# === MODUS: TEAMS ===
 elif analysis_mode == "Teams":
     st.header("🛡️ Team Analyse")
     
     # --- A. TEAM SELECTIE ---
     st.sidebar.header("3. Team Selectie")
     
-    # We halen teams op die data hebben in de team-score tabel voor dit seizoen
-    # Let op: s."squadId" en sq.id zijn nu beide TEKST, dus geen CAST nodig
+    # Lijst ophalen van teams in dit seizoen (via squad_final_scores)
     teams_query = """
         SELECT DISTINCT sq.name, sq.id as "squadId"
         FROM public.squads sq
@@ -419,23 +418,19 @@ elif analysis_mode == "Teams":
     try:
         df_teams = run_query(teams_query, params=(selected_iteration_id,))
         
-        # 1. Lijst met namen voor de dropdown
         team_names = df_teams['name'].tolist()
         selected_team_name = st.sidebar.selectbox("Kies een team:", team_names)
         
-        # 2. Checken op dubbele namen (zoals gevraagd)
+        # Checken op dubbele namen
         candidate_rows = df_teams[df_teams['name'] == selected_team_name]
         
         final_squad_id = None
         
         if len(candidate_rows) > 1:
             st.sidebar.warning(f"⚠️ Meerdere teams gevonden met naam '{selected_team_name}'.")
-            # We tonen het ID erbij om onderscheid te maken
             squad_options = candidate_rows.apply(lambda x: f"{x['name']} (ID: {x['squadId']})", axis=1).tolist()
             selected_option = st.sidebar.selectbox("Specifieer team:", squad_options)
             
-            # Het ID uit de string halen (beetje hacky maar werkt voor dropdown)
-            # Of veiliger: we zoeken de row weer op
             selected_id_str = selected_option.split("ID: ")[1].replace(")", "")
             final_squad_id = selected_id_str
             
@@ -446,15 +441,24 @@ elif analysis_mode == "Teams":
             st.error("Geen team gevonden.")
             st.stop()
             
-        st.info(f"Team ID geselecteerd: {final_squad_id}") # Debug / Bevestiging
-        
-        # Hier komt straks de rest van de Team logica...
-        st.write("🚧 Hier komt binnenkort de data uit `analysis.squad_final_scores`.")
+        # --- B. HOOFDSCHERM TEAM ---
+        if final_squad_id:
+            st.divider()
+            
+            # De naam ophalen op basis van ID (zoals gevraagd)
+            team_details_query = "SELECT name FROM public.squads WHERE id = %s"
+            df_team_details = run_query(team_details_query, params=(final_squad_id,))
+            
+            if not df_team_details.empty:
+                team_name_display = df_team_details.iloc[0]['name']
+                st.subheader(f"🛡️ {team_name_display}")
+                # Hier kunnen we straks verder bouwen (scores, spelerslijst, etc.)
+            else:
+                st.error("Kon team details niet ophalen.")
 
     except Exception as e:
-        st.error("Kon teamlijst niet ophalen. Check of analysis.squad_final_scores gevuld is.")
+        st.error("Kon teamlijst niet ophalen.")
         st.code(e)
-
 
 elif analysis_mode == "Coaches":
     st.header("👔 Coach Analyse")
