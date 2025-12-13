@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
+import plotly.express as px
 
 # -----------------------------------------------------------------------------
 # 1. CONFIGURATIE & SETUP
@@ -94,13 +95,12 @@ else:
 # 5. HOOFDSCHERM LOGICA
 # -----------------------------------------------------------------------------
 
-# === MODUS: SPELERS ===
+# === 5. HOOFDSCHERM LOGICA ===
+
 if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
     
-    # --- A. SPELER NAAM FILTER OPHALEN ---
-    # We gebruiken quotes rond "playerId" en "iterationId" omdat Postgres streng is
-    # We gebruiken kleine letters voor commonname in public.players
+    # --- A. EEN SPELER KIEZEN (DROPDOWN) ---
     players_query = """
         SELECT DISTINCT p.commonname
         FROM public.players p
@@ -113,50 +113,108 @@ if analysis_mode == "Spelers":
         df_players = run_query(players_query, params=(selected_iteration_id,))
         player_names = df_players['commonname'].tolist()
         
-        # De Multiselect box
-        selected_players = st.multiselect("Zoek specifieke spelers:", player_names)
+        # VERANDERING: Selectbox in plaats van Multiselect voor 1 speler
+        selected_player = st.sidebar.selectbox("Zoek een speler:", player_names)
         
     except Exception as e:
         st.error("Fout bij ophalen spelersnamen.")
-        st.write("De database gaf deze foutmelding:")
         st.code(e)
         st.stop()
 
-    # --- B. DATA TONEN ---
+    # --- B. DATA OPHALEN VOOR DEZE SPELER ---
     st.divider()
     
-    # Basis query voor de tabel
-    base_query = """
+    # We halen nu de specifieke profiel scores op
+    # Ik pak de kolommen uit je analysis.final_impect_scores tabel
+    score_query = """
         SELECT 
-            p.commonname as "Speler",
-            a.position as "Positie",
-            a.cb_kvk_score as "CV Score",
-            a.dm_kvk_score as "CVM Score",
-            a.cm_kvk_score as "CM Score",
-            a.fw_kvk_score as "SP Score"
+            p.commonname,
+            a.position,
+            -- Verdedigende rollen
+            a.footballing_cb_kvk_score,
+            a.controlling_cb_kvk_score,
+            a.defensive_wb_kvk_score,
+            a.offensive_wingback_kvk_score,
+            -- Middenveld rollen
+            a.ball_winning_dm_kvk_score,
+            a.playmaker_dm_kvk_score,
+            a.box_to_box_cm_kvk_score,
+            a.deep_running_acm_kvk_score,
+            a.playmaker_off_acm_kvk_score,
+            -- Aanvallende rollen
+            a.fa_inside_kvk_score,
+            a.fa_wide_kvk_score,
+            a.fw_target_kvk_score,
+            a.fw_running_kvk_score,
+            a.fw_finisher_kvk_score
         FROM analysis.final_impect_scores a
         JOIN public.players p ON a."playerId" = p.id
-        WHERE a."iterationId" = %s
+        WHERE a."iterationId" = %s AND p.commonname = %s
     """
     
-    # Logica: Filter toepassen of niet?
-    if selected_players:
-        # JA: Filter op de gekozen namen
-        query = base_query + " AND p.commonname IN %s ORDER BY p.commonname"
-        params = (selected_iteration_id, tuple(selected_players))
-        st.write(f"Toont data voor: {', '.join(selected_players)}")
-    else:
-        # NEE: Toon top 50
-        query = base_query + " LIMIT 50"
-        params = (selected_iteration_id,)
-        st.info("💡 Tip: Gebruik de zoekbalk hierboven om specifieke spelers te vinden. Hieronder zie je de eerste 50.")
-
-    # Uitvoeren en tonen
     try:
-        df_scores = run_query(query, params=params)
-        st.dataframe(df_scores, use_container_width=True)
+        # We halen de data op voor die ene speler
+        df_scores = run_query(score_query, params=(selected_iteration_id, selected_player))
+        
+        if not df_scores.empty:
+            # We pakken de eerste (en enige) rij
+            row = df_scores.iloc[0]
+            
+            # --- C. DATA VOORBEREIDEN VOOR PIE CHART ---
+            # We maken een dictionary met leesbare namen voor de kolommen
+            # Hier koppelen we de database kolomnaam aan een mooi label
+            profile_mapping = {
+                "Voetballende Verdediger": row['footballing_cb_kvk_score'],
+                "Controlerende Verdediger": row['controlling_cb_kvk_score'],
+                "Verdedigende Back": row['defensive_wb_kvk_score'],
+                "Aanvallende Back": row['offensive_wingback_kvk_score'],
+                "Ballenafpakker (CVM)": row['ball_winning_dm_kvk_score'],
+                "Spelmaker (CVM)": row['playmaker_dm_kvk_score'],
+                "Box-to-Box": row['box_to_box_cm_kvk_score'],
+                "Diepgaande '10'": row['deep_running_acm_kvk_score'],
+                "Spelmakende '10'": row['playmaker_off_acm_kvk_score'],
+                "Buitenspeler (Binnendoor)": row['fa_inside_kvk_score'],
+                "Buitenspeler (Buitenom)": row['fa_wide_kvk_score'],
+                "Targetman": row['fw_target_kvk_score'],
+                "Lopende Spits": row['fw_running_kvk_score'],
+                "Afmaker": row['fw_finisher_kvk_score']
+            }
+            
+            # Nu filteren we alle 'None' (lege) waardes en 0 waardes eruit
+            # We willen alleen tonen waar de speler daadwerkelijk een rol in heeft
+            active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
+            
+            # We maken hier weer een klein dataframe van voor de grafiek
+            df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
+            
+            # --- D. WEERGAVE ---
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.subheader(f"{selected_player}")
+                st.write(f"**Positie:** {row['position']}")
+                # Toon de ruwe tabel ook nog even (optioneel)
+                st.dataframe(df_chart, hide_index=True)
+                
+            with col2:
+                if not df_chart.empty:
+                    # De Pie Chart maken met Plotly
+                    fig = px.pie(
+                        df_chart, 
+                        values='Score', 
+                        names='Profiel', 
+                        title=f'Profielverdeling: {selected_player}',
+                        hole=0.4 # Dit maakt er een 'Donut chart' van, ziet er vaak moderner uit
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("Geen profielscores gevonden voor deze speler.")
+                    
+        else:
+            st.error("Geen data gevonden voor deze speler.")
+
     except Exception as e:
-        st.error("Fout bij ophalen scores:")
+        st.error("Er ging iets mis bij het ophalen van de details:")
         st.code(e)
 
 # === MODUS: TEAMS ===
