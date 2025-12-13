@@ -514,11 +514,12 @@ elif analysis_mode == "Teams":
                 # --- NIEUW: 1. TEAM SCORES (Metrieken) - Uitklapbaar ---
                 with st.expander("📊 Team Impect Scores (Metrieken)", expanded=False):
                     
-                    # Hier strippen we de 's' voor de JOIN met public.squad_score_definitions
+                    # Hier voegen we 'd.inverted' toe
                     score_team_query = """
                         SELECT 
                             d.name as "Metriek",
                             d.details_label as "Detail",
+                            d.inverted as "Inverted",
                             s.final_score_1_to_100 as "Score"
                         FROM analysis.squad_final_scores s
                         JOIN public.squad_score_definitions d ON d.id = REPLACE(s.metric_id, 's', '')
@@ -545,11 +546,11 @@ elif analysis_mode == "Teams":
                 # --- NIEUW: 2. TEAM KPIs (Details) - Uitklapbaar ---
                 with st.expander("📉 Team Impect KPIs (Details)", expanded=False):
                     
-                    # Hier strippen we de 'k' voor de JOIN met analysis.kpi_definitions
-                    # En we gebruiken de gecorrigeerde tabelnaam (met 's' op einde)
+                    # Hier voegen we 'd.inverted' toe
                     kpi_query = """
                         SELECT 
                             d.name as "KPI",
+                            d.inverted as "Inverted",
                             s.final_score_1_to_100 as "Score"
                         FROM analysis.squadkpi_final_scores s
                         JOIN analysis.kpi_definitions d ON d.id = REPLACE(s.metric_id, 'k', '')
