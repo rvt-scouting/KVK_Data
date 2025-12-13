@@ -274,7 +274,7 @@ if analysis_mode == "Spelers":
 
             # --- 3. SPECIFIEKE METRIEKEN (PIRAMIDE OMLAAG) ---
             st.markdown("---")
-            st.subheader("📊 Specifieke Metrieken")
+            st.subheader("📊 Impect Speler Scores")
             
             metrics_config = get_metrics_for_position(row['position'])
             
