@@ -4,10 +4,10 @@ import psycopg2
 import plotly.express as px
 
 # -----------------------------------------------------------------------------
-# 1. CONFIGURATIE & SETUP
+# 1. CONFIGURATIE & SETUP (KV KORTRIJK BRANDING 🔴⚪)
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Scouting App", page_icon="⚽", layout="wide")
-st.title("⚽ Voetbal Data Analyse")
+st.set_page_config(page_title="KVK Scouting", page_icon="🔴", layout="wide")
+st.title("🔴⚪ KV Kortrijk - Data Scouting Platform")
 
 @st.cache_resource
 def init_connection():
@@ -117,10 +117,15 @@ if analysis_mode == "Spelers":
     # --- B. DATA OPHALEN ---
     st.divider()
     
+    # UPDATE: Nu halen we ECHT alle kolommen op, inclusief de KVK hoofdscores
     score_query = """
         SELECT 
             p.commonname,
             a.position,
+            -- KVK Hoofdscores (De belangrijkste!)
+            a.cb_kvk_score, a.wb_kvk_score, a.dm_kvk_score,
+            a.cm_kvk_score, a.acm_kvk_score, a.fa_kvk_score, a.fw_kvk_score,
+            -- Specifieke Sub-profielen
             a.footballing_cb_kvk_score, a.controlling_cb_kvk_score,
             a.defensive_wb_kvk_score, a.offensive_wingback_kvk_score,
             a.ball_winning_dm_kvk_score, a.playmaker_dm_kvk_score,
@@ -139,15 +144,25 @@ if analysis_mode == "Spelers":
         if not df_scores.empty:
             row = df_scores.iloc[0]
             
-            # Mapping maken
+            # COMPLETE Mapping
             profile_mapping = {
-                "Voetballende Verdediger": row['footballing_cb_kvk_score'],
-                "Controlerende Verdediger": row['controlling_cb_kvk_score'],
+                # --- KVK HOOFDSCORES ---
+                "KVK Centrale Verdediger": row['cb_kvk_score'],
+                "KVK Wingback": row['wb_kvk_score'],
+                "KVK Verdedigende Mid.": row['dm_kvk_score'],
+                "KVK Centrale Mid.": row['cm_kvk_score'],
+                "KVK Aanvallende Mid.": row['acm_kvk_score'],
+                "KVK Flank Aanvaller": row['fa_kvk_score'],
+                "KVK Spits": row['fw_kvk_score'],
+                
+                # --- SUB PROFIELEN ---
+                "Voetballende CV": row['footballing_cb_kvk_score'],
+                "Controlerende CV": row['controlling_cb_kvk_score'],
                 "Verdedigende Back": row['defensive_wb_kvk_score'],
                 "Aanvallende Back": row['offensive_wingback_kvk_score'],
                 "Ballenafpakker (CVM)": row['ball_winning_dm_kvk_score'],
                 "Spelmaker (CVM)": row['playmaker_dm_kvk_score'],
-                "Box-to-Box": row['box_to_box_cm_kvk_score'],
+                "Box-to-Box (CM)": row['box_to_box_cm_kvk_score'],
                 "Diepgaande '10'": row['deep_running_acm_kvk_score'],
                 "Spelmakende '10'": row['playmaker_off_acm_kvk_score'],
                 "Buitenspeler (Binnendoor)": row['fa_inside_kvk_score'],
@@ -157,35 +172,27 @@ if analysis_mode == "Spelers":
                 "Afmaker": row['fw_finisher_kvk_score']
             }
             
-            # Filteren
+            # Filteren: alleen profielen met een score tonen
             active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
             df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
             
-            # --- C. DE BEREKENINGEN (Highlight & Callout) ---
+            # --- C. BEREKENINGEN ---
             
-            # 1. Zoek de hoogste score
             top_profile_name = None
-            top_profile_score = 0
             
             if not df_chart.empty:
-                # Sorteer zodat de hoogste bovenaan staat (voor de zekerheid)
                 df_chart = df_chart.sort_values(by='Score', ascending=False)
-                
                 highest_row = df_chart.iloc[0]
                 if highest_row['Score'] > 66:
                     top_profile_name = highest_row['Profiel']
-                    top_profile_score = highest_row['Score']
 
-            # 2. Styling Functie voor de Tabel
             def highlight_high_scores(val):
-                """Maakt de tekst groen en vetgedrukt als score > 66"""
                 if isinstance(val, (int, float)) and val > 66:
-                    return 'color: #2ecc71; font-weight: bold' # Mooi fel groen
+                    return 'color: #2ecc71; font-weight: bold'
                 return ''
 
             # --- D. WEERGAVE ---
             
-            # Eerst de Callout tonen (groot bovenaan het blok)
             if top_profile_name:
                 st.success(f"### ✅ Speler is POSITIEF op data profiel: {top_profile_name}")
             
@@ -196,8 +203,6 @@ if analysis_mode == "Spelers":
                 st.write(f"**Positie:** {row['position']}")
                 st.write("Score per profiel:")
                 
-                # Pas de styling toe op de tabel
-                # We formatteren de getallen ook meteen met 1 decimaal (indien nodig)
                 st.dataframe(
                     df_chart.style.applymap(highlight_high_scores, subset=['Score'])
                             .format({'Score': '{:.1f}'}),
@@ -207,18 +212,22 @@ if analysis_mode == "Spelers":
                 
             with col2:
                 if not df_chart.empty:
-                    # De Pie Chart met aangepaste kleuren
+                    # De Pie Chart
                     fig = px.pie(
                         df_chart, 
                         values='Score', 
                         names='Profiel', 
-                        title=f'Profielverdeling',
+                        title=f'KVK Profielverdeling',
                         hole=0.4,
-                        # Hier stellen we de kleuren in:
-                        color_discrete_sequence=['#e74c3c', '#ecf0f1', '#3498db'] # Rood, Wit (beetje grijs voor zichtbaarheid), Blauw
+                        # KVK Kleuren: Rood tinten en grijs/wit
+                        color_discrete_sequence=['#d71920', '#ecf0f1', '#bdc3c7', '#c0392b'] 
                     )
-                    # Zorg dat de witte tekst leesbaar is of randjes heeft
-                    fig.update_traces(textinfo='percent+label', marker=dict(line=dict(color='#000000', width=1)))
+                    
+                    fig.update_traces(
+                        textinfo='value', 
+                        textfont_size=15,
+                        marker=dict(line=dict(color='#000000', width=1))
+                    )
                     
                     st.plotly_chart(fig, use_container_width=True)
                 else:
