@@ -203,4 +203,81 @@ if analysis_mode == "Spelers":
                 "Ballenafpakker (CVM)": row['ball_winning_dm_kvk_score'],
                 "Spelmaker (CVM)": row['playmaker_dm_kvk_score'],
                 "Box-to-Box (CM)": row['box_to_box_cm_kvk_score'],
-                "Diepgaande '10'": row['deep_running_acm_kvk_
+                "Diepgaande '10'": row['deep_running_acm_kvk_score'],
+                "Spelmakende '10'": row['playmaker_off_acm_kvk_score'],
+                "Buitenspeler (Binnendoor)": row['fa_inside_kvk_score'],
+                "Buitenspeler (Buitenom)": row['fa_wide_kvk_score'],
+                "Targetman": row['fw_target_kvk_score'],
+                "Lopende Spits": row['fw_running_kvk_score'],
+                "Afmaker": row['fw_finisher_kvk_score']
+            }
+            
+            active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
+            df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
+            
+            # --- C. BEREKENINGEN ---
+            top_profile_name = None
+            if not df_chart.empty:
+                df_chart = df_chart.sort_values(by='Score', ascending=False)
+                highest_row = df_chart.iloc[0]
+                if highest_row['Score'] > 66:
+                    top_profile_name = highest_row['Profiel']
+
+            def highlight_high_scores(val):
+                if isinstance(val, (int, float)) and val > 66:
+                    return 'color: #2ecc71; font-weight: bold'
+                return ''
+
+            # --- D. WEERGAVE ---
+            if top_profile_name:
+                st.success(f"### ✅ Speler is POSITIEF op data profiel: {top_profile_name}")
+            
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.subheader(f"{selected_player_name}")
+                st.write(f"**Positie:** {row['position']}")
+                if len(candidate_rows) > 1:
+                     st.caption(f"Team: {selected_squad if 'selected_squad' in locals() else 'Onbekend'}")
+
+                st.write("Score per profiel:")
+                st.dataframe(
+                    df_chart.style.applymap(highlight_high_scores, subset=['Score'])
+                            .format({'Score': '{:.1f}'}),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+            with col2:
+                if not df_chart.empty:
+                    fig = px.pie(
+                        df_chart, 
+                        values='Score', 
+                        names='Profiel', 
+                        title=f'KVK Profielverdeling',
+                        hole=0.4,
+                        color_discrete_sequence=['#d71920', '#ecf0f1', '#bdc3c7', '#c0392b'] 
+                    )
+                    fig.update_traces(
+                        textinfo='value', 
+                        textfont_size=15,
+                        marker=dict(line=dict(color='#000000', width=1))
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("Geen actieve profielscores gevonden.")
+                    
+        else:
+            st.error("Geen data gevonden voor deze speler ID.")
+
+    except Exception as e:
+        st.error("Er ging iets mis bij het ophalen van de details:")
+        st.code(e)
+
+elif analysis_mode == "Teams":
+    st.header("🛡️ Team Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
+
+elif analysis_mode == "Coaches":
+    st.header("👔 Coach Analyse")
+    st.warning("🚧 Aan deze module wordt nog gewerkt.")
