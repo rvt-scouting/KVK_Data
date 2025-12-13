@@ -444,7 +444,6 @@ elif analysis_mode == "Teams":
         if final_squad_id:
             st.divider()
             
-            # UPDATE: We halen nu ook de 'imageUrl' op!
             team_details_query = """
                 SELECT name, "imageUrl"
                 FROM public.squads
@@ -466,6 +465,53 @@ elif analysis_mode == "Teams":
                 
                 with col_name:
                     st.header(f"🛡️ {team_name_display}")
+                    
+                # --- NIEUW: TEAM PROFIELEN (Tabel + Bar Chart) ---
+                st.divider()
+                st.subheader("📊 Team Profiel Scores")
+                
+                squad_profile_query = """
+                    SELECT profile_name as "Profiel", score as "Score"
+                    FROM analysis.squad_profile_scores
+                    WHERE "squadId" = %s AND "iterationId" = %s
+                    ORDER BY score DESC;
+                """
+                
+                try:
+                    df_profiles = run_query(squad_profile_query, params=(final_squad_id, selected_iteration_id))
+                    
+                    if not df_profiles.empty:
+                        col_prof_table, col_prof_chart = st.columns([1, 2])
+                        
+                        # Hergebruik de highlight functie
+                        def highlight_high_scores(val):
+                            if isinstance(val, (int, float)) and val > 66: return 'color: #2ecc71; font-weight: bold'
+                            return ''
+
+                        with col_prof_table:
+                            st.dataframe(
+                                df_profiles.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                            
+                        with col_prof_chart:
+                            # Bar chart
+                            fig_profiles = px.bar(
+                                df_profiles, 
+                                x='Profiel', 
+                                y='Score',
+                                title="Score per Profiel",
+                                color_discrete_sequence=['#d71920'] # KVK Rood
+                            )
+                            st.plotly_chart(fig_profiles, use_container_width=True)
+                            
+                    else:
+                        st.info("Geen profielscores gevonden voor dit team.")
+                
+                except Exception as e:
+                    st.error("Fout bij ophalen team profielen.")
+                    st.code(e)
                 
             else:
                 st.error("Kon team details niet ophalen.")
