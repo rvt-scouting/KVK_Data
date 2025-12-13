@@ -166,6 +166,7 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
+        # ID is tekst
         selected_iteration_id = str(df_details.iloc[0]['id'])
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -256,7 +257,7 @@ if analysis_mode == "Spelers":
         if not df_scores.empty:
             row = df_scores.iloc[0]
             
-            # BIO SECTIE
+            # BIO
             st.subheader(f"ℹ️ {selected_player_name}")
             col_bio1, col_bio2, col_bio3, col_bio4 = st.columns(4)
             with col_bio1: st.metric("Huidig Team", row['current_team_name'] if row['current_team_name'] else "Onbekend")
@@ -265,7 +266,7 @@ if analysis_mode == "Spelers":
             with col_bio4: st.metric("Voet", row['leg'] if row['leg'] else "-")
             st.markdown("---")
 
-            # PROFIEL SCORES
+            # PROFIELEN
             profile_mapping = {
                 "KVK Centrale Verdediger": row['cb_kvk_score'], "KVK Wingback": row['wb_kvk_score'],
                 "KVK Verdedigende Mid.": row['dm_kvk_score'], "KVK Centrale Mid.": row['cm_kvk_score'],
@@ -289,12 +290,10 @@ if analysis_mode == "Spelers":
             active_profiles = {k: v for k, v in profile_mapping.items() if v is not None and v > 0}
             df_chart = pd.DataFrame(list(active_profiles.items()), columns=['Profiel', 'Score'])
             
-            # Highlight functie
             def highlight_high_scores(val):
                 if isinstance(val, (int, float)) and val > 66: return 'color: #2ecc71; font-weight: bold'
                 return ''
 
-            # Top profiel bepalen
             top_profile_name = None
             if not df_chart.empty:
                 df_chart = df_chart.sort_values(by='Score', ascending=False)
@@ -442,18 +441,25 @@ if analysis_mode == "Spelers":
                     st.caption(f"Vergelijking gebaseerd op positie '{row['position']}' en {len(db_columns_to_compare)} actieve profielen.")
                     
                     cols_string = ", ".join([f'a.{c}' for c in db_columns_to_compare])
+                    
+                    # FIX: JOIN CASTS TOEGEVOEGD
                     sim_query = f"""
                         SELECT p.id as "playerId", p.commonname as "Naam", sq.name as "Team", i.season as "Seizoen", {cols_string}
                         FROM analysis.final_impect_scores a
-                        JOIN public.players p ON a."playerId" = p.id
-                        LEFT JOIN public.squads sq ON a."squadId" = sq.id
-                        JOIN public.iterations i ON a."iterationId" = i.id
+                        JOIN public.players p ON CAST(a."playerId" AS TEXT) = CAST(p.id AS TEXT)
+                        LEFT JOIN public.squads sq ON CAST(a."squadId" AS TEXT) = CAST(sq.id AS TEXT)
+                        JOIN public.iterations i ON CAST(a."iterationId" AS TEXT) = CAST(i.id AS TEXT)
                         WHERE a.position = %s
                     """
                     try:
                         df_all_players = run_query(sim_query, params=(row['position'],))
                         if not df_all_players.empty:
+                            # Unieke ID maken
                             df_all_players['unique_id'] = df_all_players['playerId'].astype(str) + "_" + df_all_players['Seizoen']
+                            
+                            # Dubbele regels verwijderen
+                            df_all_players = df_all_players.drop_duplicates(subset=['unique_id'])
+                            
                             df_calculation = df_all_players.set_index('unique_id')
                             
                             current_unique_id = f"{p_player_id}_{selected_season}"
@@ -466,7 +472,7 @@ if analysis_mode == "Spelers":
                                 
                                 similarity = similarity.sort_values(ascending=False)
                                 similarity = similarity[similarity.index != current_unique_id]
-                                top_10_ids = similarity.head(10).index
+                                top_10_ids = similarity.head(15).index
                                 
                                 results = df_calculation.loc[top_10_ids].copy()
                                 results['Gelijkenis %'] = similarity.loc[top_10_ids]
@@ -476,12 +482,14 @@ if analysis_mode == "Spelers":
                                     weight = 'bold' if val > 80 else 'normal'
                                     return f'color: {color}; font-weight: {weight}'
 
+                                # FIX: Reset index om styling errors te voorkomen
                                 st.dataframe(
                                     results[['Naam', 'Team', 'Seizoen', 'Gelijkenis %']]
+                                    .reset_index(drop=True)
                                     .style.applymap(color_similarity, subset=['Gelijkenis %']).format({'Gelijkenis %': '{:.1f}%'}),
                                     use_container_width=True, hide_index=True
                                 )
-                            else: st.warning("Kon de huidige speler niet vinden in de vergelijkingsset.")
+                            else: st.warning("Kon de huidige speler niet vinden in de vergelijkingsset (mogelijk ontbrekende data).")
                         else: st.info("Geen andere spelers gevonden met deze positie.")
                     except Exception as e: st.error("Fout bij berekenen similarity."); st.code(e)
             else: st.info("Deze speler heeft geen actieve profielscores om op te vergelijken.")
@@ -571,7 +579,11 @@ elif analysis_mode == "Teams":
                 # METRIEKEN (Uitklapbaar)
                 with st.expander("📊 Team Impect Scores (Metrieken)", expanded=False):
                     score_team_query = """
-                        SELECT d.name as "Metriek", d.details_label as "Detail", d.inverted as "Inverted", s.final_score_1_to_100 as "Score"
+                        SELECT 
+                            d.name as "Metriek", 
+                            d.details_label as "Detail", 
+                            d.inverted as "Inverted", 
+                            s.final_score_1_to_100 as "Score"
                         FROM analysis.squad_final_scores s
                         JOIN public.squad_score_definitions d ON d.id = REPLACE(s.metric_id, 's', '')
                         WHERE s."squadId" = %s AND s."iterationId" = %s
@@ -586,8 +598,11 @@ elif analysis_mode == "Teams":
 
                 # KPIs (Uitklapbaar)
                 with st.expander("📉 Team Impect KPIs (Details)", expanded=False):
+                    # FIX: Geen inverted hier
                     kpi_query = """
-                        SELECT d.name as "KPI", s.final_score_1_to_100 as "Score"
+                        SELECT 
+                            d.name as "KPI", 
+                            s.final_score_1_to_100 as "Score"
                         FROM analysis.squadkpi_final_scores s
                         JOIN analysis.kpi_definitions d ON d.id = REPLACE(s.metric_id, 'k', '')
                         WHERE s."squadId" = %s AND s."iterationId" = %s
