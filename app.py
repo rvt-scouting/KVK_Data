@@ -510,16 +510,48 @@ elif analysis_mode == "Teams":
                 except Exception as e:
                     st.error("Fout bij ophalen team profielen.")
                     st.code(e)
+                
+                # --- NIEUW: 1. TEAM SCORES (Metrieken) - Uitklapbaar ---
+                with st.expander("📊 Team Impect Scores (Metrieken)", expanded=False):
                     
-                # --- NIEUW: TEAM KPIs (Uitklapbaar) ---
+                    # Hier strippen we de 's' voor de JOIN met public.squad_score_definitions
+                    score_team_query = """
+                        SELECT 
+                            d.name as "Metriek",
+                            d.details_label as "Detail",
+                            s.final_score_1_to_100 as "Score"
+                        FROM analysis.squad_final_scores s
+                        JOIN public.squad_score_definitions d ON d.id = REPLACE(s.metric_id, 's', '')
+                        WHERE s."squadId" = %s AND s."iterationId" = %s
+                        ORDER BY s.final_score_1_to_100 DESC
+                    """
+                    
+                    try:
+                        df_team_scores = run_query(score_team_query, params=(final_squad_id, selected_iteration_id))
+                        
+                        if not df_team_scores.empty:
+                            st.dataframe(
+                                df_team_scores.style.applymap(highlight_high_scores, subset=['Score']).format({'Score': '{:.1f}'}),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                        else:
+                            st.info("Geen team metrieken gevonden.")
+                    except Exception as e:
+                        st.error("Fout bij ophalen team scores.")
+                        st.code(e)
+
+
+                # --- NIEUW: 2. TEAM KPIs (Details) - Uitklapbaar ---
                 with st.expander("📉 Team Impect KPIs (Details)", expanded=False):
                     
-                    # Hier gebruiken we REPLACE om de 'k' te strippen voor de JOIN
+                    # Hier strippen we de 'k' voor de JOIN met analysis.kpi_definitions
+                    # En we gebruiken de gecorrigeerde tabelnaam (met 's' op einde)
                     kpi_query = """
                         SELECT 
                             d.name as "KPI",
                             s.final_score_1_to_100 as "Score"
-                        FROM analysis.squadkpi_final_score s
+                        FROM analysis.squadkpi_final_scores s
                         JOIN analysis.kpi_definitions d ON d.id = REPLACE(s.metric_id, 'k', '')
                         WHERE s."squadId" = %s AND s."iterationId" = %s
                         ORDER BY s.final_score_1_to_100 DESC
