@@ -83,38 +83,35 @@ if analysis_mode == "Spelers":
     st.header("🏃‍♂️ Speler Analyse")
     
     # --- A. SPELER FILTER OPHALEN ---
-    # We halen alleen namen op van spelers die scores hebben in DEZE competitie (iterationId)
-    # We joinen analysis.final_impect_scores met public.players om de naam te krijgen
-    # Let op: check in je CSV of 'commonname' (kleine letters) of 'commonName' (hoofdletters) correct is.
-    # Postgres is hoofdlettergevoelig bij namen tussen dubbele quotes.
-    
+    # Gecorrigeerd: 'commonname' met kleine letters
     players_query = """
-        SELECT DISTINCT p."commonname"
+        SELECT DISTINCT p.commonname
         FROM public.players p
         JOIN analysis.final_impect_scores s ON p.id = s.playerId
         WHERE s.iterationId = %s
-        ORDER BY p."commonName";
+        ORDER BY p.commonname;
     """
     
     try:
         df_players = run_query(players_query, params=(selected_iteration_id,))
-        player_names = df_players['commonName'].tolist()
+        # Let op: Pandas kolomnaam wordt nu ook kleine letters
+        player_names = df_players['commonname'].tolist()
         
         # --- B. DE MULTISELECT ---
-        # Hiermee kan de gebruiker typen en zoeken
         selected_players = st.multiselect("Zoek specifieke spelers:", player_names)
         
     except Exception as e:
-        st.error("Kon spelersnamen niet ophalen. Check kolomnaam 'commonName' in public.players.")
+        st.error("Fout bij ophalen spelersnamen. Check of de kolom 'id' in public.players bestaat en koppelt aan 'playerId'.")
+        st.code(e)
         st.stop()
 
     # --- C. DATA TONEN OP BASIS VAN FILTER ---
     st.divider()
     
-    # Basis query
+    # Basis query: ook hier 'commonname' aangepast
     base_query = """
         SELECT 
-            p."commonName" as "Speler",
+            p.commonname as "Speler",
             a.position as "Positie",
             a.cb_kvk_score as "CV Score",
             a.dm_kvk_score as "CVM Score",
@@ -128,8 +125,8 @@ if analysis_mode == "Spelers":
     # Logica: Is er gefilterd?
     if selected_players:
         # JA: We voegen een filter toe aan de SQL
-        # We moeten de lijst namen omzetten naar een formaat dat SQL snapt (tuple)
-        query = base_query + ' AND p."commonName" IN %s ORDER BY "Speler"'
+        # We gebruiken hier ook p.commonname
+        query = base_query + " AND p.commonname IN %s ORDER BY p.commonname"
         params = (selected_iteration_id, tuple(selected_players))
         st.write(f"Toont data voor: {', '.join(selected_players)}")
     else:
@@ -145,11 +142,3 @@ if analysis_mode == "Spelers":
     except Exception as e:
         st.error("Fout bij ophalen scores:")
         st.code(e)
-
-elif analysis_mode == "Teams":
-    st.header("🛡️ Team Analyse")
-    st.warning("🚧 Aan deze module wordt nog gewerkt.")
-
-elif analysis_mode == "Coaches":
-    st.header("👔 Coach Analyse")
-    st.warning("🚧 Aan deze module wordt nog gewerkt.")
