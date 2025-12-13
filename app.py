@@ -165,6 +165,7 @@ if selected_season and selected_competition:
     df_details = run_query(details_query, params=(selected_season, selected_competition))
 
     if not df_details.empty:
+        # DIT IS NU TEKST (STRING)
         selected_iteration_id = str(df_details.iloc[0]['id'])
         st.info(f"Je kijkt nu naar: **{selected_competition}** ({selected_season})")
     else:
@@ -184,6 +185,7 @@ if analysis_mode == "Spelers":
     # --- A. SPELER SELECTIE ---
     st.sidebar.header("3. Speler Selectie")
     
+    # ALLES IS TEKST, GEEN CAST NODIG
     players_query = """
         SELECT p.commonname, p.id as "playerId", sq.name as "squadName"
         FROM public.players p
@@ -399,22 +401,22 @@ if analysis_mode == "Spelers":
             with col_rep1:
                 st.subheader("📑 Data Scout Rapporten")
                 
-                # --- NIEUW: Data Scout Rapporten Query ---
+                # FIX: scheduledDate met een 'd', en geen CAST meer
                 reports_query = """
                     SELECT 
-                        m."scheduleDate" as "Datum",
+                        m."scheduledDate" as "Datum",
                         sq_h.name as "Thuisploeg",
                         sq_a.name as "Uitploeg",
                         r.position as "Positie",
                         r.label as "Verdict"
                     FROM analysis.scouting_reports r
-                    JOIN public.matches m ON CAST(r."matchId" AS TEXT) = m.id
+                    JOIN public.matches m ON r."matchId" = m.id
                     LEFT JOIN public.squads sq_h ON m."homeSquadId" = sq_h.id
                     LEFT JOIN public.squads sq_a ON m."awaySquadId" = sq_a.id
                     WHERE r."iterationId" = %s
                       AND r."playerId" = %s
                       AND m.available = true
-                    ORDER BY m."scheduleDate" DESC
+                    ORDER BY m."scheduledDate" DESC
                 """
                 
                 try:
