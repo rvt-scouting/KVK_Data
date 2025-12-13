@@ -406,7 +406,7 @@ elif analysis_mode == "Teams":
     # --- A. TEAM SELECTIE ---
     st.sidebar.header("3. Team Selectie")
     
-    # Lijst ophalen van teams in dit seizoen (via squad_final_scores)
+    # We halen teams op die data hebben
     teams_query = """
         SELECT DISTINCT sq.name, sq.id as "squadId"
         FROM public.squads sq
@@ -421,7 +421,6 @@ elif analysis_mode == "Teams":
         team_names = df_teams['name'].tolist()
         selected_team_name = st.sidebar.selectbox("Kies een team:", team_names)
         
-        # Checken op dubbele namen
         candidate_rows = df_teams[df_teams['name'] == selected_team_name]
         
         final_squad_id = None
@@ -445,20 +444,36 @@ elif analysis_mode == "Teams":
         if final_squad_id:
             st.divider()
             
-            # De naam ophalen op basis van ID (zoals gevraagd)
-            team_details_query = "SELECT name FROM public.squads WHERE id = %s"
+            # UPDATE: We halen nu ook de 'imageUrl' op!
+            team_details_query = """
+                SELECT name, "imageUrl"
+                FROM public.squads
+                WHERE id = %s
+            """
             df_team_details = run_query(team_details_query, params=(final_squad_id,))
             
             if not df_team_details.empty:
-                team_name_display = df_team_details.iloc[0]['name']
-                st.subheader(f"🛡️ {team_name_display}")
-                # Hier kunnen we straks verder bouwen (scores, spelerslijst, etc.)
+                team_row = df_team_details.iloc[0]
+                team_name_display = team_row['name']
+                team_logo_url = team_row['imageUrl']
+                
+                # Layout met logo
+                col_logo, col_name = st.columns([1, 5])
+                
+                with col_logo:
+                    if team_logo_url:
+                        st.image(team_logo_url, width=100)
+                
+                with col_name:
+                    st.header(f"🛡️ {team_name_display}")
+                
             else:
                 st.error("Kon team details niet ophalen.")
 
     except Exception as e:
         st.error("Kon teamlijst niet ophalen.")
         st.code(e)
+
 
 elif analysis_mode == "Coaches":
     st.header("👔 Coach Analyse")
