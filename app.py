@@ -121,7 +121,7 @@ season_query = "SELECT DISTINCT season FROM public.iterations ORDER BY season DE
 try:
     df_seasons = run_query(season_query)
     seasons_list = df_seasons['season'].tolist()
-    selected_season = st.sidebar.selectbox("Seizoen:", seasons_list)
+    selected_season = st.sidebar.selectbox("Seizoen:", seasons_list, key="sb_season")
 except Exception as e:
     st.error("Kon seizoenen niet laden.")
     st.stop()
@@ -136,7 +136,7 @@ if selected_season:
     """
     df_competitions = run_query(competition_query, params=(selected_season,))
     competitions_list = df_competitions['competitionName'].tolist()
-    selected_competition = st.sidebar.selectbox("Competitie:", competitions_list)
+    selected_competition = st.sidebar.selectbox("Competitie:", competitions_list, key="sb_competition")
 else:
     selected_competition = None
 
@@ -202,7 +202,9 @@ if analysis_mode == "Spelers":
         df_players = run_query(players_query, params=(selected_iteration_id,))
         
         unique_names = df_players['commonname'].unique().tolist()
-        selected_player_name = st.sidebar.selectbox("Kies een speler:", unique_names)
+        
+        # KEY toegevoegd voor interactie
+        selected_player_name = st.sidebar.selectbox("Kies een speler:", unique_names, key="sb_player")
         
         candidate_rows = df_players[df_players['commonname'] == selected_player_name]
         
@@ -418,7 +420,8 @@ if analysis_mode == "Spelers":
             # =========================================================
             st.markdown("---")
             st.subheader("👯 Vergelijkbare Spelers (Op basis van Score & Stijl)")
-            
+            st.caption("Klik op een rij om naar die speler te springen (werkt alleen als speler in huidige lijst staat).")
+
             compare_columns = [col for col, score in profile_mapping.items() if score is not None and score > 0]
             
             # Mapping terug naar DB kolommen
@@ -440,7 +443,6 @@ if analysis_mode == "Spelers":
 
             if db_columns_to_compare:
                 with st.expander(f"Toon top 10 spelers die lijken op {selected_player_name}", expanded=False):
-                    st.caption(f"Vergelijking gebaseerd op positie '{row['position']}' en {len(db_columns_to_compare)} actieve profielen. Inclusief niveau-check.")
                     
                     cols_string = ", ".join([f'a.{c}' for c in db_columns_to_compare])
                     
@@ -501,14 +503,31 @@ if analysis_mode == "Spelers":
                                         weight = 'bold' if val > 80 else 'normal'
                                         return f'color: {color}; font-weight: {weight}'
 
-                                    # FIX: Reset index voor styling
-                                    st.dataframe(
-                                        results[['Naam', 'Team', 'Seizoen', 'Avg Score', 'Gelijkenis %']]
-                                        .reset_index(drop=True)
-                                        .style.applymap(color_similarity, subset=['Gelijkenis %'])
-                                        .format({'Gelijkenis %': '{:.1f}%', 'Avg Score': '{:.1f}'}),
-                                        use_container_width=True, hide_index=True
+                                    # --- INTERACTIEVE TABEL (NIEUW) ---
+                                    # Reset index om styling errors te voorkomen
+                                    display_df = results[['Naam', 'Team', 'Seizoen', 'Avg Score', 'Gelijkenis %']].reset_index(drop=True)
+                                    
+                                    event = st.dataframe(
+                                        display_df.style.applymap(color_similarity, subset=['Gelijkenis %']).format({'Gelijkenis %': '{:.1f}%', 'Avg Score': '{:.1f}'}),
+                                        use_container_width=True, 
+                                        hide_index=True,
+                                        on_select="rerun",  # Zorgt voor herladen bij klik
+                                        selection_mode="single-row"
                                     )
+                                    
+                                    # LOGICA VOOR KLIKKEN
+                                    if len(event.selection.rows) > 0:
+                                        selected_row_idx = event.selection.rows[0]
+                                        clicked_name = display_df.iloc[selected_row_idx]["Naam"]
+                                        
+                                        # Check of deze naam in de huidige dropdown lijst staat
+                                        if clicked_name in unique_names:
+                                            # Update de sessie state zodat de dropdown verandert
+                                            st.session_state.sb_player = clicked_name
+                                            st.rerun()
+                                        else:
+                                            st.warning(f"⚠️ '{clicked_name}' staat niet in de huidige selectielijst (ander seizoen/competitie?). Pas filters aan.")
+                                            
                                 else:
                                     st.warning("Geen spelers gevonden van vergelijkbaar niveau (binnen +/- 15 punten).")
                             else: st.warning("Kon de huidige speler niet vinden in de dataset.")
@@ -539,7 +558,9 @@ elif analysis_mode == "Teams":
     try:
         df_teams = run_query(teams_query, params=(selected_iteration_id,))
         team_names = df_teams['name'].tolist()
-        selected_team_name = st.sidebar.selectbox("Kies een team:", team_names)
+        
+        # KEY toegevoegd
+        selected_team_name = st.sidebar.selectbox("Kies een team:", team_names, key="sb_team")
         
         candidate_rows = df_teams[df_teams['name'] == selected_team_name]
         final_squad_id = None
@@ -639,6 +660,7 @@ elif analysis_mode == "Teams":
                 # VERGELIJKBARE TEAMS
                 st.markdown("---")
                 st.subheader("🤝 Vergelijkbare Teams")
+                st.caption("Klik op een rij om naar dat team te springen (werkt alleen als team in huidige lijst staat).")
                 
                 all_profiles_query = """
                     SELECT s."squadId", sq.name as "Team", i.season as "Seizoen", s.profile_name, s.score
@@ -663,7 +685,7 @@ elif analysis_mode == "Teams":
                             sim = sim.sort_values(ascending=False)
                             sim = sim[sim.index != (final_squad_id, team_row['name'], current_season)]
                             
-                            top_5 = sim.head(15).reset_index()
+                            top_5 = sim.head(5).reset_index()
                             top_5.columns = ['ID', 'Team', 'Seizoen', 'Gelijkenis %']
                             
                             def color_sim(val):
@@ -671,7 +693,27 @@ elif analysis_mode == "Teams":
                                 weight = 'bold' if val > 80 else 'normal'
                                 return f'color: {color}; font-weight: {weight}'
 
-                            st.dataframe(top_5[['Team', 'Seizoen', 'Gelijkenis %']].style.applymap(color_sim, subset=['Gelijkenis %']).format({'Gelijkenis %': '{:.1f}%'}), use_container_width=True, hide_index=True)
+                            # --- INTERACTIEVE TABEL VOOR TEAMS ---
+                            display_df = top_5[['Team', 'Seizoen', 'Gelijkenis %']]
+                            
+                            event = st.dataframe(
+                                display_df.style.applymap(color_sim, subset=['Gelijkenis %']).format({'Gelijkenis %': '{:.1f}%'}), 
+                                use_container_width=True, 
+                                hide_index=True,
+                                on_select="rerun",
+                                selection_mode="single-row"
+                            )
+                            
+                            if len(event.selection.rows) > 0:
+                                selected_row_idx = event.selection.rows[0]
+                                clicked_name = display_df.iloc[selected_row_idx]["Team"]
+                                
+                                if clicked_name in team_names:
+                                    st.session_state.sb_team = clicked_name
+                                    st.rerun()
+                                else:
+                                    st.warning(f"⚠️ '{clicked_name}' staat niet in de huidige selectielijst. Pas filters aan.")
+
                         else: st.warning("Kon dit team niet vinden in de dataset.")
                     else: st.error("Kon geen referentiedata ophalen.")
                 except Exception as e: st.error("Fout bij berekenen similarity."); st.code(e)
