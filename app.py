@@ -5,6 +5,32 @@ import plotly.express as px
 import numpy as np
 
 # -----------------------------------------------------------------------------
+# 0. NAVIGATIE LOGICA (MOET HELEMAAL BOVENAAN STAAN)
+# -----------------------------------------------------------------------------
+# Dit blok kijkt of er een klik was in de vorige run en past de filters aan
+# VOORDAT de sidebar wordt getekend.
+if "pending_nav" in st.session_state:
+    nav = st.session_state.pending_nav
+    
+    # 1. Update de filters in de sessie status
+    try:
+        st.session_state.sb_season = nav["season"]
+        st.session_state.sb_competition = nav["competition"]
+        
+        if nav["mode"] == "Spelers":
+            st.session_state.sb_player = nav["target_name"]
+        elif nav["mode"] == "Teams":
+            st.session_state.sb_team = nav["target_name"]
+            
+    except Exception as e:
+        # Veiligheidje voor als data niet exact matcht
+        print(f"Navigatie fout: {e}")
+    
+    # 2. Verwijder de tijdelijke wens zodat we niet blijven herladen
+    del st.session_state.pending_nav
+
+
+# -----------------------------------------------------------------------------
 # 1. CONFIGURATIE & SETUP
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="KVK Scouting", page_icon="🔴", layout="wide")
@@ -121,7 +147,6 @@ season_query = "SELECT DISTINCT season FROM public.iterations ORDER BY season DE
 try:
     df_seasons = run_query(season_query)
     seasons_list = df_seasons['season'].tolist()
-    # KEY toegevoegd
     selected_season = st.sidebar.selectbox("Seizoen:", seasons_list, key="sb_season")
 except Exception as e:
     st.error("Kon seizoenen niet laden.")
@@ -137,7 +162,6 @@ if selected_season:
     """
     df_competitions = run_query(competition_query, params=(selected_season,))
     competitions_list = df_competitions['competitionName'].tolist()
-    # KEY toegevoegd
     selected_competition = st.sidebar.selectbox("Competitie:", competitions_list, key="sb_competition")
 else:
     selected_competition = None
@@ -204,7 +228,7 @@ if analysis_mode == "Spelers":
         df_players = run_query(players_query, params=(selected_iteration_id,))
         
         unique_names = df_players['commonname'].unique().tolist()
-        # KEY toegevoegd
+        
         selected_player_name = st.sidebar.selectbox("Kies een speler:", unique_names, key="sb_player")
         
         candidate_rows = df_players[df_players['commonname'] == selected_player_name]
@@ -314,7 +338,7 @@ if analysis_mode == "Spelers":
                     fig.update_traces(textinfo='value', textfont_size=15, marker=dict(line=dict(color='#000000', width=1)))
                     st.plotly_chart(fig, use_container_width=True)
 
-            # METRIEKEN
+            # METRIEKEN (PIRAMIDE LAAG 2)
             st.markdown("---")
             st.subheader("📊 Impect Speler Scores")
             metrics_config = get_config_for_position(row['position'], POSITION_METRICS)
@@ -347,7 +371,7 @@ if analysis_mode == "Spelers":
             else:
                 st.info(f"Geen metrieken gevonden voor positie: '{row['position']}'")
 
-            # KPIS
+            # KPIS (PIRAMIDE LAAG 3)
             st.markdown("---")
             st.subheader("📈 Impect Speler KPIs")
             kpis_config = get_config_for_position(row['position'], POSITION_KPIS)
@@ -380,7 +404,12 @@ if analysis_mode == "Spelers":
             else:
                 st.info(f"Geen KPIs gevonden voor positie: '{row['position']}'")
 
-            # RAPPORTEN
+            # PLACEHOLDERS
+            st.markdown("---")
+            st.subheader("⚖️ Kwaliteiten & Werkpunten")
+            st.info("🚧 Hier komen de sterke en zwakke punten van de speler (gegenereerd of handmatig).")
+
+            # DATA SCOUT RAPPORTEN
             st.markdown("---")
             st.subheader("📑 Data Scout Rapporten")
             reports_query = """
@@ -412,11 +441,11 @@ if analysis_mode == "Spelers":
             st.warning("🚧 Nog geen fysieke scouting rapporten beschikbaar.")
 
             # =========================================================
-            # 7. VERGELIJKBARE SPELERS (SIMILARITY)
+            # 7. VERGELIJKBARE SPELERS (SIMILARITY) - MET NIVEAU FILTER
             # =========================================================
             st.markdown("---")
             st.subheader("👯 Vergelijkbare Spelers (Op basis van Score & Stijl)")
-            st.caption("Klik op een rij om de filters te wijzigen en naar die speler te springen.")
+            st.caption("Klik op een rij om naar die speler te springen (past Seizoen en Competitie automatisch aan).")
 
             compare_columns = [col for col, score in profile_mapping.items() if score is not None and score > 0]
             
@@ -442,7 +471,6 @@ if analysis_mode == "Spelers":
                     
                     cols_string = ", ".join([f'a.{c}' for c in db_columns_to_compare])
                     
-                    # LET OP: We halen nu ook de 'Competitie' op (i."competitionName")
                     sim_query = f"""
                         SELECT 
                             p.id as "playerId", 
@@ -468,10 +496,9 @@ if analysis_mode == "Spelers":
                             current_unique_id = f"{p_player_id}_{selected_season}"
                             
                             if current_unique_id in df_calculation.index:
-                                # Target vector
                                 target_vector = df_calculation.loc[current_unique_id, db_columns_to_compare]
                                 
-                                # === NIVEAU FILTER ===
+                                # NIVEAU FILTER
                                 target_avg_score = target_vector.mean()
                                 others_avg_scores = df_calculation[db_columns_to_compare].mean(axis=1)
                                 threshold = 15 
@@ -499,28 +526,29 @@ if analysis_mode == "Spelers":
                                         weight = 'bold' if val > 80 else 'normal'
                                         return f'color: {color}; font-weight: {weight}'
 
-                                    # --- INTERACTIEVE TABEL (NIEUW) ---
-                                    # We tonen Competitie wel in de dataframe (voor de klik logica), maar misschien verbergen we het in de view om ruimte te sparen?
-                                    # Laten we het tonen, dat is duidelijk.
+                                    # --- INTERACTIEVE TABEL ---
                                     display_df = results[['Naam', 'Team', 'Seizoen', 'Competitie', 'Avg Score', 'Gelijkenis %']].reset_index(drop=True)
                                     
                                     event = st.dataframe(
                                         display_df.style.applymap(color_similarity, subset=['Gelijkenis %']).format({'Gelijkenis %': '{:.1f}%', 'Avg Score': '{:.1f}'}),
                                         use_container_width=True, 
                                         hide_index=True,
-                                        on_select="rerun",  
+                                        on_select="rerun",
                                         selection_mode="single-row"
                                     )
                                     
-                                    # LOGICA VOOR KLIKKEN & FILTER UPDATE
+                                    # KLIK LOGICA (PING-PONG)
                                     if len(event.selection.rows) > 0:
                                         idx = event.selection.rows[0]
                                         clicked_row = display_df.iloc[idx]
                                         
-                                        # Forceer update van de sessie state
-                                        st.session_state.sb_season = clicked_row['Seizoen']
-                                        st.session_state.sb_competition = clicked_row['Competitie']
-                                        st.session_state.sb_player = clicked_row['Naam']
+                                        # We slaan de wens op en herladen, de logica BOVENAAN pakt dit op
+                                        st.session_state.pending_nav = {
+                                            "season": clicked_row['Seizoen'],
+                                            "competition": clicked_row['Competitie'],
+                                            "target_name": clicked_row['Naam'],
+                                            "mode": "Spelers"
+                                        }
                                         st.rerun()
                                             
                                 else: st.warning("Geen spelers gevonden van vergelijkbaar niveau.")
@@ -553,7 +581,6 @@ elif analysis_mode == "Teams":
         df_teams = run_query(teams_query, params=(selected_iteration_id,))
         team_names = df_teams['name'].tolist()
         
-        # KEY toegevoegd
         selected_team_name = st.sidebar.selectbox("Kies een team:", team_names, key="sb_team")
         
         candidate_rows = df_teams[df_teams['name'] == selected_team_name]
@@ -654,9 +681,8 @@ elif analysis_mode == "Teams":
                 # VERGELIJKBARE TEAMS
                 st.markdown("---")
                 st.subheader("🤝 Vergelijkbare Teams")
-                st.caption("Klik op een rij om de filters te wijzigen en naar dat team te springen.")
+                st.caption("Klik op een rij om naar dat team te springen (past Seizoen en Competitie automatisch aan).")
                 
-                # OOK HIER 'Competitie' OPHALEN
                 all_profiles_query = """
                     SELECT 
                         s."squadId", 
@@ -672,7 +698,6 @@ elif analysis_mode == "Teams":
                 try:
                     df_all = run_query(all_profiles_query)
                     if not df_all.empty:
-                        # Pivot table maakt de 'Competitie' kolom stuk als we die niet in de index zetten
                         df_pivot = df_all.pivot_table(
                             index=['squadId', 'Team', 'Seizoen', 'Competitie'], 
                             columns='profile_name', 
@@ -684,14 +709,13 @@ elif analysis_mode == "Teams":
                         
                         current_season = selected_season
                         
-                        # Index is nu 4-delig
                         if (final_squad_id, team_row['name'], current_season, selected_competition) in df_pivot.index:
                             target = df_pivot.loc[(final_squad_id, team_row['name'], current_season, selected_competition)]
                             diff = (df_pivot - target).abs().mean(axis=1)
                             sim = 100 - diff
                             sim = sim.sort_values(ascending=False)
                             
-                            # Filter eigen team eruit (zelfde seizoen/comp)
+                            # Filter eigen team eruit
                             sim = sim[sim.index != (final_squad_id, team_row['name'], current_season, selected_competition)]
                             
                             top_5 = sim.head(5).reset_index()
@@ -702,7 +726,7 @@ elif analysis_mode == "Teams":
                                 weight = 'bold' if val > 80 else 'normal'
                                 return f'color: {color}; font-weight: {weight}'
 
-                            # --- INTERACTIEVE TABEL VOOR TEAMS ---
+                            # --- INTERACTIEVE TABEL ---
                             display_df = top_5[['Team', 'Seizoen', 'Competitie', 'Gelijkenis %']]
                             
                             event = st.dataframe(
@@ -713,14 +737,17 @@ elif analysis_mode == "Teams":
                                 selection_mode="single-row"
                             )
                             
+                            # KLIK LOGICA (PING-PONG)
                             if len(event.selection.rows) > 0:
                                 idx = event.selection.rows[0]
                                 clicked_row = display_df.iloc[idx]
                                 
-                                # Forceer update van de sessie state
-                                st.session_state.sb_season = clicked_row['Seizoen']
-                                st.session_state.sb_competition = clicked_row['Competitie']
-                                st.session_state.sb_team = clicked_row['Team']
+                                st.session_state.pending_nav = {
+                                    "season": clicked_row['Seizoen'],
+                                    "competition": clicked_row['Competitie'],
+                                    "target_name": clicked_row['Team'],
+                                    "mode": "Teams"
+                                }
                                 st.rerun()
 
                         else: st.warning("Kon dit team niet vinden in de dataset.")
