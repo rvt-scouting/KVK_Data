@@ -1,5 +1,3 @@
-Werkende streamlit code voor 15-12
-
 import streamlit as st
 import pandas as pd
 import psycopg2
